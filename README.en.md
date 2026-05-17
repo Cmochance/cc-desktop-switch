@@ -192,6 +192,8 @@ Some experimental providers (Grok Web / Gemini CLI OAuth / Antigravity OAuth) in
 
 ## Acknowledgements
 
+> One-line summaries below. For the full **borrowing form / itemized list / corresponding file:line in this codebase**, see [ACKNOWLEDGEMENTS.md](./ACKNOWLEDGEMENTS.md).
+
 - [`farion1231/cc-switch`](https://github.com/farion1231/cc-switch) — provider switching paradigm inspiration
 - [`lonr-6/cc-desktop-switch`](https://github.com/lonr-6/cc-desktop-switch) — v1.x desktop shell skeleton + README structure reference + **Claude Desktop config-write feature 1:1 port** (full `crates/claude_desktop/`, sourced from upstream `backend/config.py:18-185` Provider schema and BUILTIN_PRESETS, `backend/model_alias.py:1-225` MODEL_SLOTS and multi-provider routing, `backend/registry.py:13-122` DESKTOP_CONFIG / CCDS_MARKER / serialize_gateway_headers, etc.; macOS plist + Application Support config.json write has no upstream implementation and is designed by cas)
 - [`BerriAI/litellm`](https://github.com/BerriAI/litellm) — bidirectional protocol translation patterns
@@ -201,6 +203,7 @@ Some experimental providers (Grok Web / Gemini CLI OAuth / Antigravity OAuth) in
 - [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI) — Gemini OAuth wire-level reference
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web reverse-engineering reference + dynamic statsig algorithm + tool_calls flatten pattern
 - [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins unlock injection script (React Context-value walk-up + DOM enable + MutationObserver, MIT)
+- [`QwenLM/qwen-code`](https://github.com/QwenLM/qwen-code) — Alibaba's official Qwen CLI, Bailian Token Plan (`*.maas.aliyuncs.com`) hardcoded model registry pattern (`TOKEN_PLAN_MODELS` in `packages/cli/src/auth/providers/alibaba/tokenPlan.ts`, Apache-2.0)
 
 ### Community contributors
 

@@ -192,6 +192,8 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 
 ## 致谢
 
+> 以下列表为概览(每条一句话)。**完整借鉴形式 / 借鉴清单 / 本项目对应 file:line** 见 [ACKNOWLEDGEMENTS.md](./ACKNOWLEDGEMENTS.md)。
+
 - [`farion1231/cc-switch`](https://github.com/farion1231/cc-switch) — provider 切换形态启发
 - [`lonr-6/cc-desktop-switch`](https://github.com/lonr-6/cc-desktop-switch) — v1.x 桌面壳骨架 + README 结构参考 + **Claude Desktop 配置写入功能 1:1 转写**(`crates/claude_desktop/` 全套,源自上游 `backend/config.py:18-185` Provider schema 与 BUILTIN_PRESETS、`backend/model_alias.py:1-225` MODEL_SLOTS 与多 provider 路由、`backend/registry.py:13-122` DESKTOP_CONFIG / CCDS_MARKER / serialize_gateway_headers 等;macOS plist + Application Support config.json 写入上游无实现,由 cas 自行设计)
 - [`BerriAI/litellm`](https://github.com/BerriAI/litellm) — 协议双向转换思路
@@ -201,6 +203,7 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 - [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI) — Gemini OAuth wire 参考
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web 反向工程参考 + dynamic statsig 算法 + tool_calls flatten 模式
 - [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins 解锁注入脚本(React Context-value 反查 + DOM enable + MutationObserver,MIT)
+- [`QwenLM/qwen-code`](https://github.com/QwenLM/qwen-code) — 阿里官方 Qwen CLI,百炼 Token Plan (`*.maas.aliyuncs.com`) 模型清单硬编码模式(`packages/cli/src/auth/providers/alibaba/tokenPlan.ts` 的 `TOKEN_PLAN_MODELS`,Apache-2.0)
 
 ### 社区贡献者
 
