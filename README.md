@@ -200,6 +200,7 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 - [`7as0nch/mimo2codex`](https://github.com/7as0nch/mimo2codex) — MiMo 协议借鉴
 - [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI) — Gemini OAuth wire 参考
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web 反向工程参考 + dynamic statsig 算法 + tool_calls flatten 模式
+- [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins 解锁注入脚本(React Context-value 反查 + DOM enable + MutationObserver,MIT)
 
 ### 社区贡献者
 

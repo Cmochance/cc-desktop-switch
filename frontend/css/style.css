@@ -1681,7 +1681,6 @@ label[for],
 
   .proxy-running {
     border-right: 0;
-    border-bottom: 1px solid var(--line);
     padding: 0 0 22px;
   }
 }
@@ -3099,6 +3098,13 @@ body {
   padding: 14px 0;
 }
 
+.settings-inline-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3123,6 +3129,10 @@ body {
   min-height: 56px;
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.settings-panel .settings-row:last-child {
+  border-bottom: 0;
 }
 
 .settings-panel .settings-row strong {
