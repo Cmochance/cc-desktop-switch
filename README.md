@@ -105,7 +105,7 @@ Windows 暂未做 Authenticode 代码签名,系统可能提示未知发布者,�
 | Grok Web(SuperGrok / X Premium+) | ✅ | ✅ | ✅(v2.1.6 加 tool_calls flatten) | 实验性,TOS 灰色,仅本机个人使用 |
 | Google Antigravity OAuth | ✅ | ✅ | ✅ | 后端就绪,UI 待 PR |
 | 智谱 GLM / 阿里云百炼 | ⚠️ 实验兼容 | — | — | OpenAI Chat 兼容反代 |
-| Responses 协议透传(custom) | — | — | — | 直连上游不经代理(适合 OpenAI 官方 / 原生 Responses 反代) |
+| Responses 协议透传(custom) | — | — | — | 直连上游不经代理(适合 OpenAI 官方 / 原生 Responses 反代);⚠️ Plugins/MCP `namespace` 工具包不展平,部分上游会静默丢工具 |
 
 ## 模型映射
 
