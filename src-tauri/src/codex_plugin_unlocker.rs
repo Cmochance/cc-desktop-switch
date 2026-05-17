@@ -528,7 +528,14 @@ async fn inject_unlock_script(
         await new Promise((r) => setTimeout(r, 500));
     }
 
-    // SPA 路由跳转 / sidebar 重渲会冲掉我们的 DOM mutation,装 observer 持续 enforce
+    // SPA 路由跳转 / sidebar 重渲会冲掉我们的 DOM mutation,装 observer 持续 enforce。
+    // **不基于 unlocked 标志决定是否 disconnect** — `window[MARKER].unlocked`
+    // 一旦置 true 永不 reset(marker 用 `|| { ... }` 复用),但用户后续 logout /
+    // 切账号会让 authMethod 切回非 chatgpt 重新锁 Plugins;observer 必须始终在
+    // 装,才能在 re-lock 场景下被 mutation 触发重新跑 runUnlock → 重 inject
+    // setAuthMethod('chatgpt') 解锁。`spoofChatGPTAuthMethod` 内 early-return
+    // (line 437)已保证已 chatgpt 不重复调 setAuthMethod,所以已解锁后 observer
+    // 反复 fire 也不会触发 React 重渲 → 不会有视觉抖动。
     window[MARKER].observer?.disconnect();
     window[MARKER].observer = new MutationObserver(scheduleUnlock);
     window[MARKER].observer.observe(

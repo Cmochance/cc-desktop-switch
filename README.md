@@ -204,6 +204,7 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web 反向工程参考 + dynamic statsig 算法 + tool_calls flatten 模式
 - [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins 解锁注入脚本(React Context-value 反查 + DOM enable + MutationObserver,MIT)
 - [`QwenLM/qwen-code`](https://github.com/QwenLM/qwen-code) — 阿里官方 Qwen CLI,百炼 Token Plan (`*.maas.aliyuncs.com`) 模型清单硬编码模式(`packages/cli/src/auth/providers/alibaba/tokenPlan.ts` 的 `TOKEN_PLAN_MODELS`,Apache-2.0)
+- [`BigPizzaV3/CodexPlusPlus`](https://github.com/BigPizzaV3/CodexPlusPlus) — Windows MSIX Codex Desktop CDP 注入路径(`IApplicationActivationManager` COM + AUMID 自动解析 + cmdline 序列化,`codex_session_delete/launcher.py`,MIT)
 
 ### 社区贡献者
 
