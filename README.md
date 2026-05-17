@@ -167,6 +167,19 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 
 当前 Windows 构建未做 Authenticode 代码签名。Release 页提供 `.sha256` 与 `.sig`,可用于校验安装包未被替换。
 
+### 自定义 Update URL / Self-host 自签
+
+v2.1.12+ 的客户端 **强制** RSA-3072 PKCS#1-v1.5-SHA256 验签 `latest.json` 跟 installer:升级流程会主动拉 `<url>.sig` + 用 build-time 嵌入的官方公钥 (`release/Codex-App-Transfer-release-public.pem`) 验,失败硬 fail 不 fallback 到 SHA256-only。
+
+**自定义 update URL 必须自签才能用**:
+
+1. fork 仓库,把 `release/Codex-App-Transfer-release-public.pem` 换成你自己的公钥
+2. 用对应私钥跑 `cargo run -p xtask --release -- release-bundle` 签 `latest.json` + 每个 installer
+3. 重 build 客户端,公钥嵌进二进制
+4. 用户在 设置 → Update URL 填你的 `latest.json` 地址
+
+设计意图: 客户端只信"build-time 嵌入的公钥"产生的签名,运行时不可替换公钥,防 MITM 改 `latest.json` 推任意 installer (公钥 PEM 已在 release/ 目录,但若让客户端动态从 update URL 旁边拉公钥就破坏 trust anchor)。
+
 ### 日志去哪了
 
 - 应用界面:转发页面下方实时面板,2 秒自动刷新
