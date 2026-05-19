@@ -33,7 +33,6 @@
         <a href="#claude-desktop-providers" class="route-tab" data-nav="claude-desktop-providers" title="Claude Desktop"><img class="route-tab-logo" src="assets/icons/claude.png" alt=""><span data-i18n="nav.claudeDesktopProviders">Claude Desktop</span></a>
         <a href="#dashboard" class="route-tab" data-nav="dashboard" title="Codex"><img class="route-tab-logo" src="assets/icons/codex.png" alt=""><span data-i18n="nav.dashboard">Codex</span></a>
         <a href="#proxy" class="route-tab" data-nav="proxy" title="Forwarding"><i class="bi bi-broadcast-pin"></i><span data-i18n="nav.proxy">转发</span></a>
-        <a href="#claude-desktop" class="route-tab" data-nav="claude-desktop" title="Claude Desktop 详情"><i class="bi bi-sliders"></i><span data-i18n="nav.claudeDesktop">配置详情</span></a>
         <a href="#settings" class="route-tab" data-nav="settings" title="Settings"><i class="bi bi-gear"></i><span data-i18n="nav.settings">设置</span></a>
         <a href="#guide" class="route-tab" data-nav="guide" title="Guide"><i class="bi bi-book"></i><span data-i18n="nav.guide">引导</span></a>
       </nav>
@@ -523,47 +522,6 @@
         <div class="switch-board">
           <div class="provider-card-list" id="claudeDesktopProviderCards"></div>
         </div>
-      </section>
-
-      <section class="page" id="page-claude-desktop" data-page="claude-desktop">
-        <div class="page-title title-with-back">
-          <a class="square-button" href="#claude-desktop-providers" aria-label="back"><i class="bi bi-arrow-left"></i></a>
-          <div>
-            <h1 data-i18n="claudeDesktop.title">Claude Desktop 配置详情</h1>
-            <p data-i18n="claudeDesktop.subtitle">写入 Claude Desktop 的 inferenceGateway 字段,让客户端走第三方 Anthropic-compat 上游</p>
-          </div>
-        </div>
-
-        <article class="panel desktop-card claude-desktop-detail-card">
-          <div class="configured-row" id="claudeDesktopConfiguredRow">
-            <span class="circle-check"><i class="bi bi-dash-lg"></i></span>
-            <strong id="claudeDesktopConfiguredText" data-i18n="claudeDesktop.notConfigured">未配置</strong>
-          </div>
-          <div class="config-list" id="claudeDesktopConfigList"></div>
-
-          <div class="settings-row settings-row-stack">
-            <label for="claudeDesktopProviderSelect" data-i18n="claudeDesktop.provider">使用预设</label>
-            <select id="claudeDesktopProviderSelect" class="form-select form-control-lg"></select>
-          </div>
-          <div class="settings-row settings-row-stack">
-            <label for="claudeDesktopApiKeyInput" data-i18n="claudeDesktop.apiKey">API Key</label>
-            <input type="password" id="claudeDesktopApiKeyInput" class="form-control form-control-lg" placeholder="sk-..." autocomplete="off">
-          </div>
-
-          <div class="detail-actions">
-            <button class="btn btn-primary btn-lg" type="button" data-action="apply-claude-desktop">
-              <i class="bi bi-download"></i><span data-i18n="claudeDesktop.apply">一键应用</span>
-            </button>
-            <button class="btn btn-outline-danger btn-lg" type="button" data-action="clear-claude-desktop">
-              <i class="bi bi-arrow-counterclockwise"></i><span data-i18n="claudeDesktop.clear">还原 Claude Desktop 原配置</span>
-            </button>
-          </div>
-
-          <details class="detail-disclosure">
-            <summary><span data-i18n="claudeDesktop.details">当前 Claude Desktop 状态</span><i class="bi bi-chevron-down"></i></summary>
-            <pre class="code-block" id="claudeDesktopJson"></pre>
-          </details>
-        </article>
       </section>
 
       <section class="page" id="page-proxy" data-page="proxy">
