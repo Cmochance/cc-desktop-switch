@@ -379,11 +379,13 @@ fn sig_url_for(url: &str) -> Result<String, String> {
 /// 区分 404 (操作员漏签) vs 5xx (源站故障) vs 其他 — silent-failure-hunter
 /// followup #37 IMPORTANT-2 (诊断 actionability)。
 async fn fetch_signature_text(client: &reqwest::Client, sig_url: &str) -> Result<String, String> {
-    let response = client
-        .get(sig_url)
-        .send()
-        .await
-        .map_err(|e| format!("signature request failed: {e}"))?;
+    let response = client.get(sig_url).send().await.map_err(|e| {
+        // PR #2 chatgpt-codex-connector P2:transport 失败(connect / timeout / DNS,
+        // 在拿到 HTTP response 之前)reqwest::Error Display 默认含完整 URL,self-host
+        // 用 presigned token query URL 时会泄漏到日志 / UI。`without_url()` 剥掉,
+        // 跟下面 status-code 分支保持同样的 sanitization 准则。
+        format!("signature request failed: {}", e.without_url())
+    })?;
     let status = response.status();
     if !status.is_success() {
         let code = status.as_u16();
