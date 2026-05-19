@@ -19,10 +19,14 @@ use codex_app_transfer_claude_desktop::{
     apply::{ApplyConfig, ApplyResult},
     apply_provider, build_proxy_router, builtin_presets, claude_desktop_proxy_log_dir,
     claude_desktop_proxy_telemetry, generate_gateway_api_key, has_snapshot, list_snapshots,
-    load_config, macos as cd_macos, restore_state, save_config,
+    load_config, restore_state, save_config,
     schema::{ClaudeDesktopConfig, Provider as ClaudeDesktopProvider},
     ClaudeDesktopPaths, ClaudeDesktopProxyState, CD_PROXY_BIND, CD_PROXY_PORT,
 };
+// macos 子模块 gated 在 `#[cfg(any(target_os = "macos", test))]`(crates/claude_desktop/src/lib.rs:36),
+// CI 跑 Linux 时不可用 → 把 import 拆到 cfg-gated 块,避免 unresolved import。
+#[cfg(target_os = "macos")]
+use codex_app_transfer_claude_desktop::macos as cd_macos;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -77,8 +81,8 @@ fn paths_or_err() -> Result<ClaudeDesktopPaths, (StatusCode, Json<Value>)> {
 
 fn load_or_err() -> Result<(ClaudeDesktopPaths, ClaudeDesktopConfig), (StatusCode, Json<Value>)> {
     let paths = paths_or_err()?;
-    let cfg = load_config(&paths)
-        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let cfg =
+        load_config(&paths).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok((paths, cfg))
 }
 
@@ -160,8 +164,11 @@ pub async fn add_provider(Json(mut p): Json<ClaudeDesktopProvider>) -> impl Into
         p.id = generate_provider_id();
     }
     if cfg.providers.iter().any(|x| x.id == p.id) {
-        return err(StatusCode::CONFLICT, format!("provider id 已存在: {}", p.id))
-            .into_response();
+        return err(
+            StatusCode::CONFLICT,
+            format!("provider id 已存在: {}", p.id),
+        )
+        .into_response();
     }
     p.sort_index = cfg.providers.len() as i64;
     cfg.providers.push(p);
@@ -265,7 +272,11 @@ pub async fn apply(Json(req): Json<ApplyRequest>) -> impl IntoResponse {
         .or(cfg.active_provider.as_ref())
         .cloned();
     let Some(provider_id) = provider_id else {
-        return err(StatusCode::BAD_REQUEST, "未指定 providerId 且无 active provider").into_response();
+        return err(
+            StatusCode::BAD_REQUEST,
+            "未指定 providerId 且无 active provider",
+        )
+        .into_response();
     };
     let Some(provider) = cfg.providers.iter().find(|x| x.id == provider_id) else {
         return err(
@@ -292,8 +303,11 @@ pub async fn apply(Json(req): Json<ApplyRequest>) -> impl IntoResponse {
     if cfg.gateway_api_key.trim().is_empty() {
         cfg.gateway_api_key = generate_gateway_api_key();
         if let Err(e) = save_config(&paths, &cfg) {
-            return err(StatusCode::INTERNAL_SERVER_ERROR, format!("gateway key 持久化失败: {e}"))
-                .into_response();
+            return err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("gateway key 持久化失败: {e}"),
+            )
+            .into_response();
         }
     }
     let gateway_api_key = cfg.gateway_api_key.clone();
@@ -535,7 +549,8 @@ pub async fn test_baseurl(Json(req): Json<UpstreamProbeRequest>) -> impl IntoRes
     match resp {
         Ok(r) => {
             let status = r.status().as_u16();
-            let ok = r.status().is_success() || r.status().as_u16() == 401 || r.status().as_u16() == 403;
+            let ok =
+                r.status().is_success() || r.status().as_u16() == 401 || r.status().as_u16() == 403;
             Json(json!({
                 "success": true,
                 "ok": ok,

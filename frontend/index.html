@@ -33,7 +33,6 @@
         <a href="#claude-desktop-providers" class="route-tab" data-nav="claude-desktop-providers" title="Claude Desktop"><img class="route-tab-logo" src="assets/icons/claude.png" alt=""><span data-i18n="nav.claudeDesktopProviders">Claude Desktop</span></a>
         <a href="#dashboard" class="route-tab" data-nav="dashboard" title="Codex"><img class="route-tab-logo" src="assets/icons/codex.png" alt=""><span data-i18n="nav.dashboard">Codex</span></a>
         <a href="#proxy" class="route-tab" data-nav="proxy" title="Forwarding"><i class="bi bi-broadcast-pin"></i><span data-i18n="nav.proxy">转发</span></a>
-        <a href="#claude-desktop" class="route-tab" data-nav="claude-desktop" title="Claude Desktop 详情"><i class="bi bi-sliders"></i><span data-i18n="nav.claudeDesktop">配置详情</span></a>
         <a href="#settings" class="route-tab" data-nav="settings" title="Settings"><i class="bi bi-gear"></i><span data-i18n="nav.settings">设置</span></a>
         <a href="#guide" class="route-tab" data-nav="guide" title="Guide"><i class="bi bi-book"></i><span data-i18n="nav.guide">引导</span></a>
       </nav>
@@ -128,10 +127,6 @@
         <div class="two-column provider-add-layout">
           <article class="panel form-panel">
             <form id="providerForm" autocomplete="off">
-              <div class="desktop-warning compact" id="providerUnverifiedBanner" role="note" hidden>
-                <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
-                <p data-i18n="providersAdd.unverifiedNotice">目前 Kimi Code、Kimi 月之暗面、DeepSeek、Xiaomi MiMo（Token Plan + Pay for Token）已端到端验证，其他采用兼容适配，如有问题欢迎提交反馈，谢谢！</p>
-              </div>
               <div class="mb-4">
                 <label class="form-label required" for="providerName" data-i18n="providers.name">提供商名称</label>
                 <input class="form-control form-control-lg" id="providerName" name="name" value="My DeepSeek" autocomplete="organization" required>
@@ -529,66 +524,6 @@
         </div>
       </section>
 
-      <section class="page" id="page-claude-desktop" data-page="claude-desktop">
-        <div class="page-title title-with-back">
-          <a class="square-button" href="#dashboard" aria-label="back"><i class="bi bi-arrow-left"></i></a>
-          <div>
-            <h1 data-i18n="claudeDesktop.title">Claude Desktop</h1>
-            <p data-i18n="claudeDesktop.subtitle">把 Anthropic-compat 第三方 API 直连写入 Claude Desktop(不走 cas 转发)</p>
-          </div>
-        </div>
-
-        <div class="two-column desktop-layout">
-          <div>
-            <article class="panel desktop-card">
-              <h2 data-i18n="claudeDesktop.configTitle">Claude Desktop 配置</h2>
-              <div class="configured-row" id="claudeDesktopConfiguredRow">
-                <span class="circle-check"><i class="bi bi-dash-lg"></i></span>
-                <strong id="claudeDesktopConfiguredText" data-i18n="claudeDesktop.notConfigured">未配置</strong>
-              </div>
-              <div class="config-list" id="claudeDesktopConfigList"></div>
-
-              <div class="settings-row" style="margin-top: 12px;">
-                <label data-i18n="claudeDesktop.provider">使用预设</label>
-                <select id="claudeDesktopProviderSelect" class="form-select"></select>
-              </div>
-              <div class="settings-row">
-                <label data-i18n="claudeDesktop.apiKey">API Key</label>
-                <input type="password" id="claudeDesktopApiKeyInput" class="form-control" placeholder="sk-..." autocomplete="off" />
-              </div>
-
-              <div class="apply-explain desktop-explain">
-                <i class="bi bi-info-circle"></i>
-                <p data-i18n="claudeDesktop.explainText">本工具写入 Claude Desktop 的 inferenceGateway* 配置,让 Claude Desktop 直连第三方 Anthropic-compat 上游(`https://api.deepseek.com/anthropic` 等)。完成后即使关闭本工具,Claude Desktop 仍可继续使用。</p>
-              </div>
-              <button class="btn btn-primary btn-lg w-100" type="button" data-action="apply-claude-desktop">
-                <i class="bi bi-download"></i><span data-i18n="claudeDesktop.apply">一键应用</span>
-              </button>
-            </article>
-            <article class="panel details-panel">
-              <div class="panel-header">
-                <h2 data-i18n="claudeDesktop.details">当前 Claude Desktop 状态</h2>
-                <i class="bi bi-chevron-down"></i>
-              </div>
-              <pre class="code-block" id="claudeDesktopJson"></pre>
-            </article>
-            <button class="btn btn-outline-danger btn-lg w-100 danger-outline" type="button" data-action="clear-claude-desktop">
-              <i class="bi bi-arrow-counterclockwise"></i><span data-i18n="claudeDesktop.clear">还原 Claude Desktop 原配置</span>
-            </button>
-          </div>
-
-          <article class="panel guide-panel">
-            <h2 data-i18n="claudeDesktop.quickGuide">使用说明</h2>
-            <div class="mini-steps">
-              <div class="mini-step"><span>1</span><i class="bi bi-list-check"></i><strong data-i18n="claudeDesktop.step1Title">选择 Provider 预设</strong><p data-i18n="claudeDesktop.step1Text">7 个内置:DeepSeek / Kimi / Kimi Code / Xiaomi MiMo / 智谱 GLM / 阿里云百炼</p></div>
-              <div class="mini-step"><span>2</span><i class="bi bi-key"></i><strong data-i18n="claudeDesktop.step2Title">填 API Key</strong><p data-i18n="claudeDesktop.step2Text">在对应供应商控制台获取的 API Key</p></div>
-              <div class="mini-step"><span>3</span><i class="bi bi-download"></i><strong data-i18n="claudeDesktop.step3Title">一键应用</strong><p data-i18n="claudeDesktop.step3Text">写入 Claude Desktop 配置 → 重启 Claude Desktop 生效</p></div>
-            </div>
-            <p class="muted" style="margin-top:12px;font-size:0.85em;" data-i18n="claudeDesktop.upstreamCredit">本功能借鉴自 lonr-6/cc-desktop-switch (Apache-2)。</p>
-          </article>
-        </div>
-      </section>
-
       <section class="page" id="page-proxy" data-page="proxy">
         <div class="segmented proxy-target-segment" role="tablist" aria-label="Forward target switch">
           <button class="btn active" type="button" role="tab" data-proxy-target="claude" aria-selected="true"><img class="segmented-logo" src="assets/icons/claude.png" alt=""><span data-i18n="proxy.tab.claude">Claude Desktop</span></button>
@@ -750,14 +685,26 @@
             <div class="settings-row settings-row-stack">
               <strong data-i18n="settings.autoUnlockCodexPlugins">自动解锁 Codex Plugins</strong>
               <div>
-                <label class="switch-label only-switch"><input type="checkbox" id="autoUnlockCodexPlugins"><span class="switch-ui"></span></label>
-                <p class="settings-note" data-i18n="settings.autoUnlockCodexPluginsHint">开启后，应用启动时会自动检测 Codex Desktop 并通过 CDP 注入脚本解锁 Plugins 选项卡。需要 Codex Desktop 以 --remote-debugging-port=9222 启动。</p>
-                <p class="settings-note" id="pluginUnlockRuntimeStatus" data-i18n="settings.pluginUnlockRuntimeStatus">运行时状态: 未检测</p>
+                <div class="settings-inline-actions">
+                  <label class="switch-label only-switch"><input type="checkbox" id="autoUnlockCodexPlugins" checked><span class="switch-ui"></span></label>
+                  <button type="button" class="btn btn-sm btn-outline-primary" id="autoUnlockRestartCodex" data-action="auto-unlock-restart-codex" data-i18n="settings.autoUnlockRestartCodex">重启 Codex</button>
+                </div>
+                <p class="settings-note" data-i18n="settings.autoUnlockCodexPluginsHint">此功能需要通过本应用内启动 Codex 才能正常使用。点击右侧「重启 Codex」可直接重启 Codex 并触发自动注入。</p>
+                <p class="settings-note" id="pluginUnlockRuntimeStatus" data-i18n="settings.pluginUnlockRuntimeStatus">运行时状态:未检测</p>
               </div>
-              <div class="settings-row">
-                <strong data-i18n="settings.autoWakeCodexPet">自动唤醒 Codex Pet</strong>
+            </div>
+            <div class="settings-row settings-row-stack">
+              <strong data-i18n="settings.autoWakeCodexPet">自动唤醒 Codex 桌面宠物</strong>
+              <div>
                 <label class="switch-label only-switch"><input type="checkbox" id="autoWakeCodexPet"><span class="switch-ui"></span></label>
-                <p class="settings-note" data-i18n="settings.autoWakeCodexPetHint">开启后，启动 Codex Desktop 时会自动唤醒宠物（修改 ~/.codex/.codex-global-state.json 中的 electron-avatar-overlay-open 为 true）。</p>
+                <p class="settings-note" data-i18n="settings.autoWakeCodexPetHint">开启后，启动 Codex Desktop 时会自动将 ~/.codex/.codex-global-state.json 中的 electron-avatar-overlay-open 置为 true,让桌面宠物随 Codex 一起唤醒。</p>
+              </div>
+            </div>
+            <div class="settings-row settings-row-stack">
+              <strong data-i18n="settings.codexNetworkAccess">允许 Codex 联网工具</strong>
+              <div>
+                <label class="switch-label only-switch"><input type="checkbox" id="codexNetworkAccess" checked><span class="switch-ui"></span></label>
+                <p class="settings-note" data-i18n="settings.codexNetworkAccessHint">默认开启。让 Codex 走 workspace-write 沙箱:可以用 curl / wget 等联网命令获取实时网页,同时模型也获得编辑工作目录文件的权限(Codex 设计为一体档位)。关闭后 Codex 回 read-only 沙箱:无网络,仅能用模型自带的 web_search 能力;如果所选模型不支持 web_search,则完全无法联网搜索。⚠️ macOS 已知 bug(openai/codex#10390):seatbelt 沙箱静默忽略 config.toml 里的 network_access,本开关在 Linux / Windows 生效,macOS 上需手动用 `codex --sandbox danger-full-access` CLI 参数绕过。</p>
               </div>
             </div>
             <div class="settings-row settings-row-stack">

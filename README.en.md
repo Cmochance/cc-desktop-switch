@@ -105,7 +105,7 @@ If the desktop window can't open (rare — usually Tauri webview init failed / s
 | Grok Web (SuperGrok / X Premium+) | ✅ | ✅ | ✅ (v2.1.6 adds tool_calls flatten) | Experimental, TOS gray area, personal use only |
 | Google Antigravity OAuth | ✅ | ✅ | ✅ | Backend ready, UI pending |
 | Zhipu GLM / Alibaba Cloud Bailian | ⚠️ experimental | — | — | OpenAI Chat-compatible reverse proxy |
-| Responses passthrough (custom) | — | — | — | Direct upstream connection, bypasses proxy (suitable for OpenAI official / native Responses reverse proxy) |
+| Responses passthrough (custom) | — | — | — | Direct upstream connection, bypasses proxy (suitable for OpenAI official / native Responses reverse proxy); ⚠️ Plugins/MCP `namespace` tool bundle is NOT flattened — some upstreams silently drop tools |
 
 ## Model mapping
 
@@ -167,6 +167,19 @@ v2 only listens on `18080` (forwarding) by default; the admin UI now uses Tauri 
 
 The current Windows build is not Authenticode-signed. The Release page provides `.sha256` and `.sig` to verify the installer hasn't been tampered with.
 
+### Self-host / custom update URL
+
+From v2.1.12+ the client **enforces** RSA-3072 PKCS#1-v1.5-SHA256 verification on `latest.json` and every installer. The upgrade flow fetches `<url>.sig` alongside the file and verifies against the build-time embedded official public key (`release/Codex-App-Transfer-release-public.pem`). Failure is fatal — no SHA256-only fallback.
+
+**A custom update URL must be self-signed to work**:
+
+1. Fork the repo and replace `release/Codex-App-Transfer-release-public.pem` with your own public key.
+2. Run `cargo run -p xtask --release -- release-bundle` with the matching private key to sign `latest.json` and every installer.
+3. Rebuild the client so the public key is embedded.
+4. Users point Settings → Update URL at your `latest.json` endpoint.
+
+Design intent: the client trusts only the build-time embedded public key and never lets a runtime URL replace it, blocking MITM rewrites of `latest.json` (the public PEM lives in `release/` but pulling it from the same origin as the update URL would dissolve the trust anchor).
+
 ### Where are the logs?
 
 - App UI: real-time panel below the forwarding page, auto-refreshes every 2s
@@ -192,6 +205,8 @@ Some experimental providers (Grok Web / Gemini CLI OAuth / Antigravity OAuth) in
 
 ## Acknowledgements
 
+> One-line summaries below. For the full **borrowing form / itemized list / corresponding file:line in this codebase**, see [ACKNOWLEDGEMENTS.md](./ACKNOWLEDGEMENTS.md).
+
 - [`farion1231/cc-switch`](https://github.com/farion1231/cc-switch) — provider switching paradigm inspiration
 - [`lonr-6/cc-desktop-switch`](https://github.com/lonr-6/cc-desktop-switch) — v1.x desktop shell skeleton + README structure reference + **Claude Desktop config-write feature 1:1 port** (full `crates/claude_desktop/`, sourced from upstream `backend/config.py:18-185` Provider schema and BUILTIN_PRESETS, `backend/model_alias.py:1-225` MODEL_SLOTS and multi-provider routing, `backend/registry.py:13-122` DESKTOP_CONFIG / CCDS_MARKER / serialize_gateway_headers, etc.; macOS plist + Application Support config.json write has no upstream implementation and is designed by cas)
 - [`BerriAI/litellm`](https://github.com/BerriAI/litellm) — bidirectional protocol translation patterns
@@ -200,6 +215,9 @@ Some experimental providers (Grok Web / Gemini CLI OAuth / Antigravity OAuth) in
 - [`7as0nch/mimo2codex`](https://github.com/7as0nch/mimo2codex) — MiMo protocol reference
 - [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI) — Gemini OAuth wire-level reference
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web reverse-engineering reference + dynamic statsig algorithm + tool_calls flatten pattern
+- [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins unlock injection script (React Context-value walk-up + DOM enable + MutationObserver, MIT)
+- [`QwenLM/qwen-code`](https://github.com/QwenLM/qwen-code) — Alibaba's official Qwen CLI, Bailian Token Plan (`*.maas.aliyuncs.com`) hardcoded model registry pattern (`TOKEN_PLAN_MODELS` in `packages/cli/src/auth/providers/alibaba/tokenPlan.ts`, Apache-2.0)
+- [`BigPizzaV3/CodexPlusPlus`](https://github.com/BigPizzaV3/CodexPlusPlus) — Windows MSIX Codex Desktop CDP injection path (`IApplicationActivationManager` COM + AUMID auto-resolve + cmdline serialization, `codex_session_delete/launcher.py`, MIT)
 
 ### Community contributors
 

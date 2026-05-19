@@ -129,7 +129,9 @@ pub fn normalize_model_mappings(models: Option<&IndexMap<String, Value>>) -> Mod
 /// `model_mappings_with_legacy_aliases(models)`(`backend/model_alias.py:83-106`)——
 /// 在 7 槽位之上补回旧 sonnet/opus/haiku 别名,供兼容读取(老 client 还会查
 /// 这些 key)。
-pub fn model_mappings_with_legacy_aliases(models: Option<&IndexMap<String, Value>>) -> ModelMappings {
+pub fn model_mappings_with_legacy_aliases(
+    models: Option<&IndexMap<String, Value>>,
+) -> ModelMappings {
     let normalized = normalize_model_mappings(models);
     let mut compat = normalized.clone();
     let get = |key: &str| normalized.get(key).cloned().unwrap_or_default();
@@ -420,7 +422,10 @@ pub fn resolve_requested_model_slot(requested_model: &str) -> Option<&'static st
         if requested.contains("4-6") {
             return Some("opus_4_6");
         }
-        if requested.starts_with("claude-3") || requested.contains("-3-") || requested.ends_with("-3") {
+        if requested.starts_with("claude-3")
+            || requested.contains("-3-")
+            || requested.ends_with("-3")
+        {
             return Some("opus_3");
         }
         return Some("opus");
@@ -489,8 +494,14 @@ mod tests {
         m.insert("default".to_owned(), json!("kimi-k2.6"));
         m.insert("sonnet".to_owned(), json!("kimi-sonnet"));
         let normalized = normalize_model_mappings(Some(&m));
-        assert_eq!(normalized.get("default").map(String::as_str), Some("kimi-k2.6"));
-        assert_eq!(normalized.get("sonnet_4_6").map(String::as_str), Some("kimi-sonnet"));
+        assert_eq!(
+            normalized.get("default").map(String::as_str),
+            Some("kimi-k2.6")
+        );
+        assert_eq!(
+            normalized.get("sonnet_4_6").map(String::as_str),
+            Some("kimi-sonnet")
+        );
         assert_eq!(normalized.get("sonnet_4_5").map(String::as_str), Some(""));
     }
 
@@ -567,13 +578,22 @@ mod tests {
 
     #[test]
     fn resolve_requested_model_slot_known_ids() {
-        assert_eq!(resolve_requested_model_slot("claude-opus-4-7"), Some("opus_4_7"));
-        assert_eq!(resolve_requested_model_slot("claude-3-opus"), Some("opus_3"));
+        assert_eq!(
+            resolve_requested_model_slot("claude-opus-4-7"),
+            Some("opus_4_7")
+        );
+        assert_eq!(
+            resolve_requested_model_slot("claude-3-opus"),
+            Some("opus_3")
+        );
     }
 
     #[test]
     fn resolve_requested_model_slot_family_keywords() {
-        assert_eq!(resolve_requested_model_slot("some-sonnet-thing"), Some("sonnet"));
+        assert_eq!(
+            resolve_requested_model_slot("some-sonnet-thing"),
+            Some("sonnet")
+        );
         assert_eq!(resolve_requested_model_slot("haiku-mini"), Some("haiku"));
         assert_eq!(resolve_requested_model_slot("opus-pro"), Some("opus"));
         assert_eq!(resolve_requested_model_slot("opus-4-7"), Some("opus_4_7"));

@@ -101,12 +101,30 @@ fn quit_command(platform: &str, force: bool) -> Vec<String> {
             "-x".into(),
             MACOS_APP_NAME.into(),
         ],
-        ("windows", false) => vec!["taskkill".into(), "/IM".into(), WINDOWS_PROCESS_NAME.into()],
+        // follow-up #33 P2-b:从 `taskkill /IM` 切到 PowerShell CIM 路径。
+        //
+        // taskkill 在 Codex Desktop 这种 MSIX packaged Store app 上经常报
+        // access-denied(packaged app 进程隔离机制),失败时本项目 quit_codex_
+        // app_with_retries 走 KILL 路径仍是 taskkill,**两层 fallback 都失败**
+        // → Codex 永远关不掉 → "重启 Codex" 实际只 ActivateApplication
+        // 把现有进程带到前台,config.toml 不重读。
+        //
+        // PowerShell `Get-CimInstance Win32_Process` 走 WMI 拿到 process ID
+        // 后 `Stop-Process -Id` 优雅清理,绕过 MSIX 进程隔离的 taskkill 限制。
+        // 借鉴 BigPizzaV3/CodexPlusPlus `codex_session_delete/launcher.py:
+        // 434-451`(MIT)实证可用。`hide_console_window` (line 192-202) 已加
+        // CREATE_NO_WINDOW flag 给 powershell,不弹 console。
+        ("windows", false) => vec![
+            "powershell".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            "Get-CimInstance Win32_Process -Filter \"Name='Codex.exe' OR Name='codex.exe'\" | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }".into(),
+        ],
         ("windows", true) => vec![
-            "taskkill".into(),
-            "/F".into(),
-            "/IM".into(),
-            WINDOWS_PROCESS_NAME.into(),
+            "powershell".into(),
+            "-NoProfile".into(),
+            "-Command".into(),
+            "Get-CimInstance Win32_Process -Filter \"Name='Codex.exe' OR Name='codex.exe'\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }".into(),
         ],
         (_, false) => vec![
             "pkill".into(),
@@ -303,27 +321,45 @@ fn maybe_wake_codex_pet() {
     );
 }
 
-/// 读取设置判断是否应附加调试端口参数
+/// 读取设置判断是否应附加调试端口参数。
+///
+/// 默认 true:setting key 缺失或 registry 读失败时,仍附加 debug port,以便
+/// 新装/初始化场景下 Plugins 解锁开箱即用。用户显式关闭(=false)时才不附加。
+/// 跟 main.rs setup hook 中的 auto-start 默认值保持一致。
 fn should_attach_debug_port() -> Vec<String> {
-    match crate::admin::registry_io::load() {
-        Ok(cfg) => {
-            let auto_unlock = cfg
-                .get("settings")
-                .and_then(|s| s.get("autoUnlockCodexPlugins"))
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            if auto_unlock {
-                vec!["--remote-debugging-port=9222".into()]
-            } else {
-                vec![]
-            }
-        }
-        Err(_) => vec![],
+    let auto_unlock = match crate::admin::registry_io::load() {
+        Ok(cfg) => cfg
+            .get("settings")
+            .and_then(|s| s.get("autoUnlockCodexPlugins"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true),
+        Err(_) => true,
+    };
+    if auto_unlock {
+        // `--remote-allow-origins=*` 是 Chrome 111+ / Electron 同代起的硬性
+        // 要求:不带它,CDP HTTP /json/list 仍工作,但 WebSocket upgrade 完成
+        // 后会被远端 reset(我们 log 里见过 "Connection reset without closing
+        // handshake")。galaxywk223/codex-plugin-unlocker (MIT) 同样加这个
+        // flag,见其 `launcher.py:55-58`。
+        vec![
+            "--remote-debugging-port=9222".into(),
+            "--remote-allow-origins=*".into(),
+        ]
+    } else {
+        vec![]
     }
 }
 
 fn open_codex_app(platform: &str) -> Result<(), String> {
     maybe_wake_codex_pet();
+
+    // Windows MSIX activation: 见 `windows_msix.rs` module docs。失败时
+    // fallthrough 到 explorer.exe shell:AppsFolder 老路径(args 丢失)。
+    #[cfg(target_os = "windows")]
+    if crate::windows_msix::try_launch_codex(&should_attach_debug_port()) {
+        return Ok(());
+    }
+
     let resolved = if platform == "macos" {
         resolve_macos_app_path()
     } else {
@@ -370,6 +406,9 @@ pub(super) struct DesktopConfigTarget {
     pub(super) requires_proxy: bool,
     pub(super) mode: &'static str,
     pub(super) proxy_port: u16,
+    /// #212:是否允许 Codex shell 工具网络访问(从 `Settings.codexNetworkAccess`
+    /// 读取,默认 `true`)。写入 `sandbox_workspace_write.network_access`。
+    pub(super) codex_network_access: bool,
 }
 
 fn desktop_config_target_for_provider(
@@ -414,6 +453,8 @@ fn desktop_config_target_for_provider(
         && !provider_base_url.is_empty()
         && !direct_api_key.is_empty();
 
+    let codex_network_access = super::proxy::read_codex_network_access(cfg);
+
     if bypass_proxy {
         return DesktopConfigTarget {
             base_url: provider_base_url,
@@ -426,6 +467,7 @@ fn desktop_config_target_for_provider(
             requires_proxy: false,
             mode: "direct",
             proxy_port,
+            codex_network_access,
         };
     }
 
@@ -445,6 +487,7 @@ fn desktop_config_target_for_provider(
         requires_proxy: true,
         mode: "local_proxy",
         proxy_port,
+        codex_network_access,
     }
 }
 
@@ -676,6 +719,7 @@ fn apply_desktop_target(target: &DesktopConfigTarget) -> Result<Value, String> {
             model_mappings: Some(&target.model_mappings),
             model_capabilities: Some(&target.model_capabilities),
             app_version: APP_VERSION,
+            codex_network_access: target.codex_network_access,
         },
     )
     .map_err(|e| format!("apply 失败: {e}"))?;
@@ -894,6 +938,28 @@ pub async fn desktop_clear() -> impl IntoResponse {
         Ok(p) => p,
         Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     };
+    // follow-up #28 P0 守门:无快照时**直接 noop 不动文件**。
+    //
+    // 老逻辑直接调 restore_codex_state → has_snapshot=false 走
+    // clear_managed_codex_state 一刀删 MANAGED_TOML_KEYS + MANAGED_AUTH_KEYS
+    // 全部字段(`openai_base_url` / `model_provider` / `model` / `OPENAI_API_KEY`
+    // / `auth_mode` 等)。复现:用户从未用过本 app,自己手写过 ~/.codex/config.toml
+    // 含 `openai_base_url = "https://my-proxy"` + `model_provider = "azure"`,
+    // 装本 app 后**没 apply**就点 "清除桌面配置" 按钮 → 用户手写的 managed
+    // key 被全删 → Codex CLI 直接使用立刻坏。
+    //
+    // 修法 B(最小守门): has_snapshot=false 时直接返结构化 message,
+    // 不动文件。语义:没本 app apply 过 = 没东西要还原 = noop 安全。用户
+    // 真想清自己写的 config 应该手动编辑 ~/.codex/config.toml,而不是
+    // 走本 app 的"清除桌面配置"按钮。
+    if !has_snapshot(&paths) {
+        return Json(json!({
+            "success": true,
+            "restored": false,
+            "message": "no snapshot to clear (本应用未对 ~/.codex/ 做过任何修改,无需清除)",
+        }))
+        .into_response();
+    }
     match restore_codex_state(&paths) {
         Ok(restored) => Json(json!({"success": true, "restored": restored})).into_response(),
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
@@ -949,7 +1015,19 @@ pub async fn desktop_snapshot_status() -> impl IntoResponse {
 
 pub async fn restart_codex_app() -> impl IntoResponse {
     match launch_codex_app_restart(std::env::consts::OS) {
-        Ok(_) => Json(json!({"success": true})).into_response(),
+        Ok(_) => {
+            // 通知 plugin_unlock daemon 重置 backoff 立刻重新 detect_cdp。
+            // 没这条联动时,用户场景"Codex Desktop 已关闭一段时间,daemon 持续
+            // detect 失败 backoff 涨到 ~8s → 点'重新启动'按钮 → Codex 1s 内
+            // 启动 + CDP 监听 → daemon 仍在 sleep 中,等当前 backoff 醒来才
+            // re-detect" 会让解锁延迟 5-8s。
+            // ServiceCommand::Reinject 在 disconnected 状态下被 run_daemon
+            // (codex_plugin_unlocker.rs:188-193) 解读为"加速重连请求 — reset
+            // backoff",已经是处理这场景的正确机制,只是之前没人触发它。
+            let service = super::plugin_unlock::get_service().await;
+            service.reinject().await;
+            Json(json!({"success": true})).into_response()
+        }
         Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
     }
 }
@@ -1025,7 +1103,7 @@ mod tests {
 
     #[test]
     fn quit_command_uses_term_then_kill() {
-        // graceful = SIGTERM / 普通 taskkill;force = SIGKILL / taskkill /F
+        // graceful = SIGTERM / PowerShell Stop-Process;force = SIGKILL / Stop-Process -Force
         assert_eq!(
             quit_command("macos", false),
             vec!["pkill", "-TERM", "-x", "Codex"]
@@ -1034,14 +1112,25 @@ mod tests {
             quit_command("macos", true),
             vec!["pkill", "-KILL", "-x", "Codex"]
         );
-        assert_eq!(
-            quit_command("windows", false),
-            vec!["taskkill", "/IM", "Codex.exe"]
+        // Windows: follow-up #33 P2-b 切到 PowerShell CIM,绕过 taskkill 对
+        // MSIX packaged Store app 的 access-denied 限制。
+        let win_graceful = quit_command("windows", false);
+        assert_eq!(win_graceful[0], "powershell");
+        assert_eq!(win_graceful[1], "-NoProfile");
+        assert_eq!(win_graceful[2], "-Command");
+        assert!(win_graceful[3].contains("Get-CimInstance Win32_Process"));
+        assert!(win_graceful[3].contains("Codex.exe"));
+        assert!(win_graceful[3].contains("Stop-Process"));
+        assert!(
+            !win_graceful[3].contains("-Force"),
+            "graceful 不应该有 -Force"
         );
-        assert_eq!(
-            quit_command("windows", true),
-            vec!["taskkill", "/F", "/IM", "Codex.exe"]
-        );
+
+        let win_force = quit_command("windows", true);
+        assert_eq!(win_force[0], "powershell");
+        assert!(win_force[3].contains("Stop-Process"));
+        assert!(win_force[3].contains("-Force"), "force 必须有 -Force");
+
         assert_eq!(
             quit_command("linux", false),
             vec!["pkill", "-TERM", "-x", "codex"]

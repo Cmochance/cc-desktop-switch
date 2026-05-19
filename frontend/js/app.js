@@ -1,5 +1,5 @@
 (function () {
-  const routes = ["dashboard", "providers/add", "providers", "desktop", "claude-desktop", "claude-desktop-providers", "claude-desktop-providers/add", "proxy", "settings", "guide"];
+  const routes = ["dashboard", "providers/add", "providers", "desktop", "claude-desktop-providers", "claude-desktop-providers/add", "proxy", "settings", "guide"];
   const providerFormModelSlots = [
     { key: "default", label: "Default", icon: "bi-circle-fill", iconClass: "default", source: "未配置映射时默认使用这一项", required: true },
     { key: "gpt_5_5", label: "gpt-5.5", icon: "bi-circle", iconClass: "default", source: "gpt-5.5" },
@@ -63,16 +63,20 @@
     restartReminderModal?.hide();
   }
 
-  async function restartCodexAppNow() {
-    const button = $("#restartReminderNow");
+  async function restartCodexAppNow({
+    buttonId = "restartReminderNow",
+    fallbackLabelKey = "restartReminder.now",
+    hideModal = true,
+  } = {}) {
+    const button = $(`#${buttonId}`);
     const original = button?.textContent;
     try {
       if (button) {
         button.disabled = true;
-        button.textContent = t("restartReminder.restarting");
+        button.textContent = t("restartReminder.restarting") || "重启中…";
       }
       await CCApi.restartCodexApp();
-      restartReminderModal?.hide();
+      if (hideModal) restartReminderModal?.hide();
       showToast(t("toast.codexAppRestartRequested"));
     } catch (error) {
       console.error(error);
@@ -80,7 +84,7 @@
     } finally {
       if (button) {
         button.disabled = false;
-        button.textContent = original || t("restartReminder.now");
+        button.textContent = original || t(fallbackLabelKey);
       }
     }
   }
@@ -1244,6 +1248,15 @@
       statusText.classList.toggle("muted-text", s.class === "muted");
       statusText.textContent = s.text;
       if (actions) actions.style.display = unlock.status === "injected" || unlock.status === "connected" ? "block" : "none";
+
+      // 同步设置页"运行时状态"提示。dashboard 卡片跟 settings 页用同一份
+      // /api/desktop/plugin-unlock/status 数据,文案前缀 "运行时状态：" 标识
+      // 这是 daemon 当前态(跟用户配置区分开)。
+      const runtimeNote = $("#pluginUnlockRuntimeStatus");
+      if (runtimeNote) {
+        const prefix = t("settings.pluginUnlockRuntimeStatusPrefix") || "运行时状态：";
+        runtimeNote.textContent = `${prefix}${s.text}`;
+      }
     } catch (e) {
       console.log("[PluginUnlock] status refresh failed:", e);
     }
@@ -1693,21 +1706,6 @@
     }
   }
 
-  function isVerifiedProviderId(id) {
-    const value = String(id || "").toLowerCase();
-    if (value === "kimi" || value === "kimi-code" || value.startsWith("kimi-")) return true;
-    if (value === "xiaomi-mimo-token-plan" || value === "xiaomi-mimo-payg") return true;
-    if (value === "deepseek") return true;
-    if (value === "gemini-cli-oauth") return true;
-    if (value === "antigravity-oauth") return true;
-    return false;
-  }
-
-  function setUnverifiedBanner(show) {
-    const banner = $("#providerUnverifiedBanner");
-    if (banner) banner.hidden = !show;
-  }
-
   function resetProviderForm() {
     editingProviderId = null;
     selectedPreset = null;
@@ -1735,7 +1733,6 @@
     fillGrokWebFormFromProvider(null);
     setWebSearchRow(false, false, null);
     setProviderMappings(emptyMappings());
-    setUnverifiedBanner(false);
   }
 
   function applyPresetToForm(preset, notify = true) {
@@ -1780,7 +1777,6 @@
     setProviderMappings(preset.models || emptyMappings());
     renderPresetOptions(preset, preset.models || emptyMappings());
     updatePresetSelection();
-    setUnverifiedBanner(!isVerifiedProviderId(preset.id));
     if (notify) showToast(`${preset.name} ${t("toast.presetFilled")}`);
   }
 
@@ -1841,7 +1837,6 @@
     setProviderMappings(provider.mappings || emptyMappings());
     renderPresetOptions(selectedPreset, provider.mappings || emptyMappings());
     updatePresetSelection();
-    setUnverifiedBanner(!isVerifiedProviderId(matchedPreset?.id || provider.id));
   }
 
   async function renderProviderForm() {
@@ -2179,10 +2174,11 @@
     $("#settingsProxyPort").value = settings.proxyPort;
     $("#settingsAdminPort").value = settings.adminPort;
     $("#autoApplyOnStart").checked = settings.autoApplyOnStart !== false;
-   $("#autoUnlockCodexPlugins").checked = !!settings.autoUnlockCodexPlugins;
+   $("#autoUnlockCodexPlugins").checked = settings.autoUnlockCodexPlugins !== false;
     $("#autoWakeCodexPet").checked = settings.autoWakeCodexPet !== false;
    $("#exposeAllProviderModels").checked = !!settings.exposeAllProviderModels;
     $("#restoreCodexOnExit").checked = settings.restoreCodexOnExit !== false;
+    $("#codexNetworkAccess").checked = settings.codexNetworkAccess !== false;
     $("#settingsUpdateUrl").value = settings.updateUrl || "";
     renderModelMenuModeState(settings);
     await refreshAppVersion();
@@ -2278,7 +2274,6 @@
     if (route === "providers/add") await renderProviderForm();
     if (route === "providers") await renderProviders();
     if (route === "desktop") await renderDesktop();
-    if (route === "claude-desktop") await renderClaudeDesktop();
     if (route === "claude-desktop-providers") await renderClaudeDesktopProviders();
     if (route === "claude-desktop-providers/add") await renderClaudeDesktopProviderForm();
     if (route === "proxy") await renderProxy();
@@ -2288,105 +2283,6 @@
   // ─── Claude Desktop tab(macOS apply / status / preset → API Key 形式)─────
   let claudeDesktopState = { presets: [], providers: [], activeProvider: null };
 
-  async function renderClaudeDesktop() {
-    const status = await CCApi.getClaudeDesktopStatus().catch(() => null);
-    const data = await CCApi.listClaudeDesktopProviders().catch(() => ({
-      activeProvider: null,
-      providers: [],
-      presets: [],
-    }));
-    claudeDesktopState = {
-      activeProvider: data.activeProvider,
-      providers: data.providers || [],
-      presets: data.presets || [],
-    };
-
-    // Configured row
-    const row = $("#claudeDesktopConfiguredRow");
-    const text = $("#claudeDesktopConfiguredText");
-    const managed = !!(status && status.desktopStatus && status.desktopStatus.managedByUs);
-    if (row && text) {
-      row.querySelector("span").innerHTML = managed
-        ? '<i class="bi bi-check-lg"></i>'
-        : '<i class="bi bi-dash-lg"></i>';
-      text.textContent = managed ? "已由本工具配置" : "未配置";
-    }
-
-    // Provider select(presets only — full CRUD UI 待后续 stacked PR)
-    const select = $("#claudeDesktopProviderSelect");
-    if (select) {
-      const presets = claudeDesktopState.presets || [];
-      select.innerHTML = presets
-        .map((p) => {
-          const selected = claudeDesktopState.activeProvider === p.id ? "selected" : "";
-          return `<option value="${p.id}" ${selected}>${p.name}</option>`;
-        })
-        .join("");
-    }
-
-    // Config list:把 desktopStatus 关键字段做平面展示
-    const list = $("#claudeDesktopConfigList");
-    if (list && status && status.desktopStatus) {
-      const ds = status.desktopStatus;
-      list.innerHTML = [
-        ["平台", status.platform || "-"],
-        ["plist 存在", ds.plistExists ? "✓" : "—"],
-        ["config.json 存在", ds.configJsonExists ? "✓" : "—"],
-        ["当前 base_url", ds.currentBaseUrl || "—"],
-        ["当前 provider", ds.currentInferenceProvider || "—"],
-      ]
-        .map(([k, v]) => `<div class="config-row"><span>${k}</span><strong>${v}</strong></div>`)
-        .join("");
-    } else if (list) {
-      list.innerHTML = '<div class="config-row muted">读取状态失败</div>';
-    }
-
-    // Details JSON 块
-    const jsonEl = $("#claudeDesktopJson");
-    if (jsonEl) {
-      jsonEl.textContent = JSON.stringify(status || {}, null, 2);
-    }
-  }
-
-  async function handleApplyClaudeDesktop() {
-    const select = $("#claudeDesktopProviderSelect");
-    const apiKey = $("#claudeDesktopApiKeyInput");
-    if (!select || !select.value) {
-      showToast("请选择一个 Provider 预设");
-      return;
-    }
-    const presetId = select.value;
-    const preset = (claudeDesktopState.presets || []).find((p) => p.id === presetId);
-    if (!preset) {
-      showToast("找不到对应的预设");
-      return;
-    }
-    const key = (apiKey && apiKey.value || "").trim();
-    if (!key) {
-      showToast("请输入 API Key");
-      return;
-    }
-
-    // 用 preset 数据 + 用户填的 api_key 构造完整 provider,upsert + 设 default
-    const existing = (claudeDesktopState.providers || []).find((x) => x.id === presetId);
-    const provider = JSON.parse(JSON.stringify(preset));
-    provider.apiKey = key;
-    if (existing) {
-      await CCApi.updateClaudeDesktopProvider(presetId, provider).catch((e) => {
-        throw new Error(`更新 provider 失败: ${e.message || e}`);
-      });
-    } else {
-      await CCApi.addClaudeDesktopProvider(provider).catch((e) => {
-        throw new Error(`添加 provider 失败: ${e.message || e}`);
-      });
-    }
-    await CCApi.setClaudeDesktopDefaultProvider(presetId).catch(() => null);
-    const result = await CCApi.applyClaudeDesktop({ providerId: presetId }).catch((e) => {
-      throw new Error(`apply 失败: ${e.message || e}`);
-    });
-    showToast(`已写入 Claude Desktop 配置(${result.platform || ""})。请重启 Claude Desktop 生效。`);
-    await renderClaudeDesktop();
-  }
 
   // ─── Claude Desktop providers 卡片列表(sidebar 第 2 个入口)──────────
   // **UI 1:1 复用 Codex providers 同款 markup**(providerCardMarkup /
@@ -2816,7 +2712,8 @@
       throw new Error(`clear 失败: ${e.message || e}`);
     });
     showToast(result.restored ? "已从快照还原 Claude Desktop 原配置" : "已清掉本工具写入的字段");
-    await renderClaudeDesktop();
+    // 唯一 caller 是 claude-desktop-clear-current action(providers 页),自然 fall-through
+    // 到外层 action handler 里的 renderClaudeDesktopProviders 刷新。
   }
 
   let currentTheme = "default";
@@ -2854,6 +2751,7 @@
       autoWakeCodexPet: $("#autoWakeCodexPet")?.checked !== false,
      exposeAllProviderModels: $("#exposeAllProviderModels")?.checked || false,
       restoreCodexOnExit: $("#restoreCodexOnExit")?.checked !== false,
+      codexNetworkAccess: $("#codexNetworkAccess")?.checked !== false,
       updateUrl: $("#settingsUpdateUrl").value.trim(),
     };
     await CCApi.saveSettings(settings);
@@ -3362,15 +3260,7 @@
         await renderDesktop();
       }
 
-      if (action === "apply-claude-desktop") {
-        try {
-          await handleApplyClaudeDesktop();
-        } catch (e) {
-          showToast(e.message || String(e));
-        }
-      }
-
-      if (action === "clear-claude-desktop" || action === "claude-desktop-clear-current") {
+      if (action === "claude-desktop-clear-current") {
         try {
           await handleClearClaudeDesktop();
           if (routeFromHash() === "claude-desktop-providers") {
@@ -4079,11 +3969,19 @@
     });
     $("#exposeAllProviderModels").addEventListener("change", saveSettingsFromForm);
     $("#restoreCodexOnExit")?.addEventListener("change", saveSettingsFromForm);
+    $("#codexNetworkAccess")?.addEventListener("change", saveSettingsFromForm);
     $("#configImportFile")?.addEventListener("change", (event) => {
       importConfigFile(event.target.files?.[0]);
     });
     $("#restartReminderLater")?.addEventListener("click", dismissRestartReminderLater);
-    $("#restartReminderNow")?.addEventListener("click", restartCodexAppNow);
+    $("#restartReminderNow")?.addEventListener("click", () => restartCodexAppNow());
+    $("#autoUnlockRestartCodex")?.addEventListener("click", () =>
+      restartCodexAppNow({
+        buttonId: "autoUnlockRestartCodex",
+        fallbackLabelKey: "settings.autoUnlockRestartCodex",
+        hideModal: false,
+      })
+    );
 
     $("#confirmDelete").addEventListener("click", async () => {
       if (!pendingDeleteId) return;

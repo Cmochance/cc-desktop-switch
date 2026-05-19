@@ -7,6 +7,8 @@ mod admin;
 mod codex_plugin_unlocker;
 mod proxy_runner;
 mod telemetry_bridge;
+#[cfg(target_os = "windows")]
+mod windows_msix;
 
 use std::sync::Arc;
 
@@ -50,30 +52,75 @@ fn main() {
         .setup(|app| {
             let startup_proxy_manager = app.state::<Arc<ProxyManager>>().inner().clone();
             let _ = handlers::desktop::restore_codex_if_enabled("startup");
+            // follow-up #29:GC ~/.codex-app-transfer/codex-snapshots/trash/ 下
+            // mtime > TRASH_RETENTION_DAYS 天的软删 bucket。fire-and-forget,
+            // 失败 warn 不阻塞 startup。retention 给用户"误点 cleanup_all 后
+            // 还有窗口期可在 trash/ 手动恢复"的安全网。
+            //
+            // always log:`removed=0/failed=0` = trash 空 / 无东西要清(健康),
+            // `removed=0/failed=N` = GC 跑了但全失败(权限 / 锁 / 异常 FS),
+            // 必须区分让运维诊断 trash 持续 grow 的根因。
+            tauri::async_runtime::spawn(async {
+                use codex_app_transfer_codex_integration::{
+                    gc_trash_older_than, CodexPaths, TRASH_RETENTION_DAYS,
+                };
+                match CodexPaths::from_home_env() {
+                    Ok(paths) => {
+                        let (removed, failed) =
+                            gc_trash_older_than(&paths, TRASH_RETENTION_DAYS);
+                        if failed > 0 {
+                            tracing::warn!(
+                                removed,
+                                failed,
+                                retention_days = TRASH_RETENTION_DAYS,
+                                "snapshot trash GC: some buckets failed to remove (检查 trash/ 目录权限 / 文件锁)"
+                            );
+                        } else {
+                            tracing::info!(
+                                removed,
+                                retention_days = TRASH_RETENTION_DAYS,
+                                "snapshot trash GC: removed expired buckets"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "snapshot trash GC skipped: CodexPaths::from_home_env() failed"
+                        );
+                    }
+                }
+            });
             tauri::async_runtime::spawn(async move {
                 let _ = handlers::desktop::auto_apply_on_startup_if_enabled(startup_proxy_manager)
                     .await;
             });
 
             // ── Plugin Unlock 守护进程自动启动 ──
-            // 如果用户开启了 "autoUnlockCodexPlugins" 设置，启动 CDP 注入守护
+            // 默认开启;用户显式关掉 autoUnlockCodexPlugins=false 才跳过 auto-start。
+            // 必须复用 handlers::plugin_unlock 的 OnceCell 单例,否则会跟前端
+            // 手动 start 出来的 service 各自跑一份,frontend 查 status 看到的
+            // 是 OnceCell 那份 → 永远 Disconnected。
             tauri::async_runtime::spawn(async move {
-                // 延迟 5 秒，等桌面 apply + Codex 启动完成后再检测
-                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                // 启动延迟 1 秒(原 5 秒)。daemon 内部有指数退避 retry
+                // (1s→30s),首次 detect_cdp 失败会自动重试;5 秒太长导致
+                // 用户开 Codex Desktop 后 Plugins 锁定状态可见时间 ~5s+,
+                // 改 1s 让 daemon 更早 connect + 更早 inject,把"可见
+                // 锁定时间"压到 ~1-2s。
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
 
-                // 从 registry 中读取开关状态
                 let auto_unlock = match crate::admin::registry_io::load() {
                     Ok(cfg) => cfg
                         .get("settings")
                         .and_then(|s| s.get("autoUnlockCodexPlugins"))
                         .and_then(|v| v.as_bool())
-                        .unwrap_or(false),
-                    Err(_) => false,
+                        .unwrap_or(true),
+                    Err(_) => true,
                 };
 
                 if auto_unlock {
                     tracing::info!("[PluginUnlock] autoUnlockCodexPlugins=true, starting service");
-                    let service = crate::codex_plugin_unlocker::PluginUnlockService::default_new();
+                    let service = handlers::plugin_unlock::get_service().await;
                     service.start();
                 } else {
                     tracing::debug!(

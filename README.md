@@ -105,7 +105,7 @@ Windows 暂未做 Authenticode 代码签名,系统可能提示未知发布者,�
 | Grok Web(SuperGrok / X Premium+) | ✅ | ✅ | ✅(v2.1.6 加 tool_calls flatten) | 实验性,TOS 灰色,仅本机个人使用 |
 | Google Antigravity OAuth | ✅ | ✅ | ✅ | 后端就绪,UI 待 PR |
 | 智谱 GLM / 阿里云百炼 | ⚠️ 实验兼容 | — | — | OpenAI Chat 兼容反代 |
-| Responses 协议透传(custom) | — | — | — | 直连上游不经代理(适合 OpenAI 官方 / 原生 Responses 反代) |
+| Responses 协议透传(custom) | — | — | — | 直连上游不经代理(适合 OpenAI 官方 / 原生 Responses 反代);⚠️ Plugins/MCP `namespace` 工具包不展平,部分上游会静默丢工具 |
 
 ## 模型映射
 
@@ -139,6 +139,17 @@ cargo tauri build --bundles deb,appimage     # Linux x86_64
 
 ## 常见问题
 
+### Codex 模型不能用 curl 等联网命令 / 看似卡在网络
+
+本应用 v2.1.12+ 默认在 apply 时把 `sandbox_mode = "workspace-write"` + `[sandbox_workspace_write] network_access = true` 同时写入 `~/.codex/config.toml`(Codex CLI 默认 `sandbox_mode = read-only` 会忽略 `[sandbox_workspace_write]` 段),小白用户开箱即用。可在 设置 → "允许 Codex 联网工具" 开关里关闭(#212)。**关闭后 Codex 回 read-only 沙箱无网络,仅能用所选模型自带的 `web_search` 能力;若模型不支持 web_search 则完全无法联网搜索**。
+
+> **⚠️ macOS 已知上游 bug**:[openai/codex#10390](https://github.com/openai/codex/issues/10390)。macOS 的 seatbelt 沙箱**静默忽略** config.toml 里的 `network_access`,本开关在 macOS 上**写得对但不生效**(Linux / Windows 正常)。OpenAI 官方 issue 仍 Open,**workaround = 命令行参数**:
+> ```bash
+> codex --sandbox danger-full-access "your prompt"
+> # 或永久 alias
+> alias codex='CODEX_SANDBOX_NETWORK_DISABLED=0 codex --sandbox danger-full-access'
+> ```
+
 ### Codex CLI 提示 `404 Not Found url: http://127.0.0.1:18080/responses`
 
 老版本只有 `/v1/responses`,Codex CLI 0.126 起回退到 `/responses`(不带 `/v1/`)。本工具已加路由别名,更新到 v1.0.1+ 即可。
@@ -167,6 +178,19 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 
 当前 Windows 构建未做 Authenticode 代码签名。Release 页提供 `.sha256` 与 `.sig`,可用于校验安装包未被替换。
 
+### 自定义 Update URL / Self-host 自签
+
+v2.1.12+ 的客户端 **强制** RSA-3072 PKCS#1-v1.5-SHA256 验签 `latest.json` 跟 installer:升级流程会主动拉 `<url>.sig` + 用 build-time 嵌入的官方公钥 (`release/Codex-App-Transfer-release-public.pem`) 验,失败硬 fail 不 fallback 到 SHA256-only。
+
+**自定义 update URL 必须自签才能用**:
+
+1. fork 仓库,把 `release/Codex-App-Transfer-release-public.pem` 换成你自己的公钥
+2. 用对应私钥跑 `cargo run -p xtask --release -- release-bundle` 签 `latest.json` + 每个 installer
+3. 重 build 客户端,公钥嵌进二进制
+4. 用户在 设置 → Update URL 填你的 `latest.json` 地址
+
+设计意图: 客户端只信"build-time 嵌入的公钥"产生的签名,运行时不可替换公钥,防 MITM 改 `latest.json` 推任意 installer (公钥 PEM 已在 release/ 目录,但若让客户端动态从 update URL 旁边拉公钥就破坏 trust anchor)。
+
 ### 日志去哪了
 
 - 应用界面:转发页面下方实时面板,2 秒自动刷新
@@ -192,6 +216,8 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 
 ## 致谢
 
+> 以下列表为概览(每条一句话)。**完整借鉴形式 / 借鉴清单 / 本项目对应 file:line** 见 [ACKNOWLEDGEMENTS.md](./ACKNOWLEDGEMENTS.md)。
+
 - [`farion1231/cc-switch`](https://github.com/farion1231/cc-switch) — provider 切换形态启发
 - [`lonr-6/cc-desktop-switch`](https://github.com/lonr-6/cc-desktop-switch) — v1.x 桌面壳骨架 + README 结构参考 + **Claude Desktop 配置写入功能 1:1 转写**(`crates/claude_desktop/` 全套,源自上游 `backend/config.py:18-185` Provider schema 与 BUILTIN_PRESETS、`backend/model_alias.py:1-225` MODEL_SLOTS 与多 provider 路由、`backend/registry.py:13-122` DESKTOP_CONFIG / CCDS_MARKER / serialize_gateway_headers 等;macOS plist + Application Support config.json 写入上游无实现,由 cas 自行设计)
 - [`BerriAI/litellm`](https://github.com/BerriAI/litellm) — 协议双向转换思路
@@ -200,6 +226,9 @@ v2 默认监听 `18080`(转发);管理界面走 Tauri 同进程 `cas://`,不再�
 - [`7as0nch/mimo2codex`](https://github.com/7as0nch/mimo2codex) — MiMo 协议借鉴
 - [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI) — Gemini OAuth wire 参考
 - [`chenyme/grok2api`](https://github.com/chenyme/grok2api) — Grok Web 反向工程参考 + dynamic statsig 算法 + tool_calls flatten 模式
+- [`galaxywk223/codex-plugin-unlocker`](https://github.com/galaxywk223/codex-plugin-unlocker) — Codex Desktop Plugins 解锁注入脚本(React Context-value 反查 + DOM enable + MutationObserver,MIT)
+- [`QwenLM/qwen-code`](https://github.com/QwenLM/qwen-code) — 阿里官方 Qwen CLI,百炼 Token Plan (`*.maas.aliyuncs.com`) 模型清单硬编码模式(`packages/cli/src/auth/providers/alibaba/tokenPlan.ts` 的 `TOKEN_PLAN_MODELS`,Apache-2.0)
+- [`BigPizzaV3/CodexPlusPlus`](https://github.com/BigPizzaV3/CodexPlusPlus) — Windows MSIX Codex Desktop CDP 注入路径(`IApplicationActivationManager` COM + AUMID 自动解析 + cmdline 序列化,`codex_session_delete/launcher.py`,MIT)
 
 ### 社区贡献者
 

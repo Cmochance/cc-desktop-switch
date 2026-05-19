@@ -48,8 +48,7 @@ pub use proxy::{
 };
 
 pub use telemetry::{
-    claude_desktop_proxy_log_dir, claude_desktop_proxy_telemetry, ProxyLogEntry,
-    ProxyStatsSnapshot,
+    claude_desktop_proxy_log_dir, claude_desktop_proxy_telemetry, ProxyLogEntry, ProxyStatsSnapshot,
 };
 
 pub use apply::{apply_provider, restore_state, ApplyConfig, ApplyResult};

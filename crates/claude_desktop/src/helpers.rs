@@ -328,7 +328,10 @@ mod tests {
 
     #[test]
     fn safe_config_value_masks_secrets() {
-        assert_eq!(safe_config_value("inferenceGatewayApiKey", "sk-abc"), "******");
+        assert_eq!(
+            safe_config_value("inferenceGatewayApiKey", "sk-abc"),
+            "******"
+        );
         assert_eq!(safe_config_value("inferenceGatewayApiKey", ""), "");
         assert_eq!(safe_config_value("inferenceProvider", "gateway"), "gateway");
         assert_eq!(safe_config_value("inferenceGatewayHeaders", "[]"), "");
@@ -371,7 +374,8 @@ mod tests {
     fn serialize_inference_models_for_provider() {
         let mut p = provider("deepseek", "DeepSeek", "");
         // sonnet legacy key 会被 normalize 到 sonnet_4_6 slot
-        p.models.insert("sonnet".to_owned(), "deepseek-v4-pro".to_owned());
+        p.models
+            .insert("sonnet".to_owned(), "deepseek-v4-pro".to_owned());
         let serialized = serialize_inference_models(Some(&p), &[], false);
         // name 必须是 Claude 白名单(claude-sonnet-4-6),不能是上游真实 ID
         assert!(serialized.contains(r#""name":"claude-sonnet-4-6""#));

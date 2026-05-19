@@ -16,10 +16,11 @@ const BUILTIN_PRESETS_JSON: &str = include_str!("presets_data.json");
 
 /// 加载 7 个内置 preset(运行时 deserialize 一次,后续可复制 Vec)。
 pub fn builtin_presets() -> Result<Vec<Provider>, ClaudeDesktopError> {
-    let parsed: Vec<Provider> = serde_json::from_str(BUILTIN_PRESETS_JSON)
-        .map_err(|e| ClaudeDesktopError::SchemaCorrupt(format!(
+    let parsed: Vec<Provider> = serde_json::from_str(BUILTIN_PRESETS_JSON).map_err(|e| {
+        ClaudeDesktopError::SchemaCorrupt(format!(
             "builtin preset JSON 解析失败(crates/claude_desktop/src/presets_data.json): {e}"
-        )))?;
+        ))
+    })?;
     Ok(parsed)
 }
 
@@ -51,7 +52,10 @@ mod tests {
         );
 
         for p in &presets {
-            assert_eq!(p.api_format, "anthropic", "全部 7 个 preset api_format 必须是 anthropic");
+            assert_eq!(
+                p.api_format, "anthropic",
+                "全部 7 个 preset api_format 必须是 anthropic"
+            );
             assert!(!p.base_url.is_empty(), "{} baseUrl 不能为空", p.id);
             assert!(p.is_builtin, "{} 必须标 isBuiltin=true", p.id);
         }
@@ -64,10 +68,18 @@ mod tests {
         assert_eq!(deepseek.name, "DeepSeek");
         assert_eq!(deepseek.base_url, "https://api.deepseek.com/anthropic");
         assert_eq!(deepseek.auth_scheme, "bearer");
-        assert_eq!(deepseek.models.get("sonnet").map(String::as_str), Some("deepseek-v4-pro"));
-        assert_eq!(deepseek.models.get("haiku").map(String::as_str), Some("deepseek-v4-flash"));
+        assert_eq!(
+            deepseek.models.get("sonnet").map(String::as_str),
+            Some("deepseek-v4-pro")
+        );
+        assert_eq!(
+            deepseek.models.get("haiku").map(String::as_str),
+            Some("deepseek-v4-flash")
+        );
         assert!(deepseek.model_options.contains_key("deepseek_1m"));
-        assert!(deepseek.request_option_presets.contains_key("deepseek_max_effort"));
+        assert!(deepseek
+            .request_option_presets
+            .contains_key("deepseek_max_effort"));
         assert_eq!(
             deepseek.extra_headers.get("x-api-key").map(String::as_str),
             Some("{apiKey}")
@@ -89,7 +101,10 @@ mod tests {
         let presets = builtin_presets().unwrap();
         let bailian = presets.iter().find(|p| p.id == "bailian").unwrap();
         assert_eq!(bailian.auth_scheme, "x-api-key");
-        assert_eq!(bailian.base_url, "https://dashscope.aliyuncs.com/apps/anthropic");
+        assert_eq!(
+            bailian.base_url,
+            "https://dashscope.aliyuncs.com/apps/anthropic"
+        );
         assert!(bailian.model_options.contains_key("qwen_1m"));
     }
 
@@ -97,7 +112,10 @@ mod tests {
     fn xiaomi_mimo_token_plan_has_base_url_options() {
         // backend/config.py:121-143 Xiaomi MiMo Token Plan 有 2 个 baseUrl 选项
         let presets = builtin_presets().unwrap();
-        let mimo = presets.iter().find(|p| p.id == "xiaomi-mimo-token-plan").unwrap();
+        let mimo = presets
+            .iter()
+            .find(|p| p.id == "xiaomi-mimo-token-plan")
+            .unwrap();
         assert_eq!(mimo.base_url_options.len(), 2);
         assert!(!mimo.base_url_hint.is_empty());
     }
