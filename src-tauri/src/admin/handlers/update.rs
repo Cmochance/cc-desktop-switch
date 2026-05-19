@@ -239,7 +239,7 @@ pub(super) fn macos_translocation_precheck() -> Result<(), String> {
         let exe_str = exe.to_string_lossy();
         if exe_str.contains("/AppTranslocation/") {
             return Err(
-                "Codex App Transfer 当前从 .dmg 临时挂载点 (AppTranslocation) 运行 — \
+                "CC Desktop Switch 当前从 .dmg 临时挂载点 (AppTranslocation) 运行 — \
                  请先把 .app 拖到 /Applications/ 再执行升级,否则 macOS Gatekeeper 会让升级失败"
                     .to_owned(),
             );
@@ -829,7 +829,7 @@ pub async fn update_install(body: Option<Json<UpdateInstallInput>>) -> impl Into
                     "Installer downloaded and opened. Quit the app, then follow the macOS prompts to finish installing.".to_owned()
                 }
             } else {
-                "Installer downloaded and launched. It will reuse the previous install location and close any running Codex App Transfer before installing.".to_owned()
+                "Installer downloaded and launched. It will reuse the previous install location and close any running CC Desktop Switch before installing.".to_owned()
             }),
         );
     }
@@ -1011,14 +1011,14 @@ mod tests {
             .join("release");
         let json_path = release_dir.join("latest.json");
         let sig_path = release_dir.join("latest.json.sig");
-        if !json_path.exists() || !sig_path.exists() {
-            eprintln!(
-                "skipping: {} / {} missing (run `cargo run -p xtask -- release-bundle` first)",
-                json_path.display(),
-                sig_path.display()
-            );
-            return;
-        }
+        // 同 signature.rs 测试:**不要** silently skip。这是 fetch_latest_json 唯一的
+        // end-to-end happy-path 测,silent 会让 update 主路径坏了 CI 也绿。
+        assert!(
+            json_path.exists() && sig_path.exists(),
+            "missing release fixture: {} / {}. 还原或 `cargo run -p xtask -- release-bundle`",
+            json_path.display(),
+            sig_path.display()
+        );
         let json_bytes = std::fs::read(&json_path).unwrap();
         let sig_text = std::fs::read_to_string(&sig_path).unwrap();
 

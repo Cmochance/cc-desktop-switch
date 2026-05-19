@@ -115,14 +115,15 @@ mod tests {
             .join("release")
             .join("latest.json");
         let sig_path = json_path.with_file_name("latest.json.sig");
-        if !json_path.exists() || !sig_path.exists() {
-            eprintln!(
-                "skipping: {} or {} missing — run xtask release-bundle first",
-                json_path.display(),
-                sig_path.display()
-            );
-            return;
-        }
+        // Phase 2(cc-desktop-switch 自己 release key 链路就绪)之前,fixture 可能缺;
+        // **不要** silently skip —— 这是核心 MITM 回归 guard,silent 会让真 break 也 CI 绿。
+        assert!(
+            json_path.exists() && sig_path.exists(),
+            "missing release fixture: {} or {}. 还原 release/latest.json{{,.sig}} 或 \
+             cargo run -p xtask -- release-bundle 重生成后再跑测试",
+            json_path.display(),
+            sig_path.display()
+        );
         let data = std::fs::read(&json_path).expect("read latest.json");
         let sig = std::fs::read_to_string(&sig_path).expect("read latest.json.sig");
         verify_signed_bytes(&data, &sig)
@@ -138,10 +139,10 @@ mod tests {
             .join("release")
             .join("latest.json");
         let sig_path = json_path.with_file_name("latest.json.sig");
-        if !json_path.exists() || !sig_path.exists() {
-            eprintln!("skipping: release samples missing");
-            return;
-        }
+        assert!(
+            json_path.exists() && sig_path.exists(),
+            "missing release fixture for tampered_data_rejected: restore release/latest.json{{,.sig}}"
+        );
         let mut data = std::fs::read(&json_path).expect("read latest.json");
         let sig = std::fs::read_to_string(&sig_path).expect("read latest.json.sig");
         if !data.is_empty() {
@@ -155,17 +156,25 @@ mod tests {
     }
 
     /// 用 dmg 的真签名样本验 (installer 路径同样 PKCS1-v15-SHA256 over raw bytes)。
+    ///
+    /// dmg 体积大不进 git,这测试默认 `#[ignore]`,本地手放样本后跑
+    /// `cargo test -- --ignored real_release_installer_signature_verifies`。
+    /// 主路径(byte-stream 验签)已被 `real_release_latest_json_signature_verifies`
+    /// + `tampered_data_rejected` + `fetch_latest_json_verifies_real_signature_end_to_end`
+    /// 覆盖,本测试主要 cover "大文件" 路径(防 stream chunk 边界 bug)。
     #[test]
+    #[ignore]
     fn real_release_installer_signature_verifies() {
         let dmg_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("release")
             .join("Codex-App-Transfer-v1.0.3-macOS-arm64.dmg");
         let sig_path = dmg_path.with_file_name("Codex-App-Transfer-v1.0.3-macOS-arm64.dmg.sig");
-        if !dmg_path.exists() || !sig_path.exists() {
-            eprintln!("skipping: installer sample {} missing", dmg_path.display());
-            return;
-        }
+        assert!(
+            dmg_path.exists() && sig_path.exists(),
+            "missing installer fixture: {}. 本地手动放 release/Codex-App-Transfer-v1.0.3-macOS-arm64.dmg{{,.sig}}",
+            dmg_path.display()
+        );
         let data = std::fs::read(&dmg_path).expect("read dmg");
         let sig = std::fs::read_to_string(&sig_path).expect("read dmg.sig");
         verify_signed_bytes(&data, &sig).expect("real installer must verify");
@@ -213,10 +222,10 @@ mod tests {
             .join("release")
             .join("latest.json");
         let sig_path = json_path.with_file_name("latest.json.sig");
-        if !json_path.exists() || !sig_path.exists() {
-            eprintln!("skipping");
-            return;
-        }
+        assert!(
+            json_path.exists() && sig_path.exists(),
+            "missing release fixture for trims_whitespace_around_signature"
+        );
         let data = std::fs::read(&json_path).unwrap();
         let sig = std::fs::read_to_string(&sig_path).unwrap();
         let padded = format!("\n  {}  \n", sig.trim());
