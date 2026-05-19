@@ -1,5 +1,20 @@
 name: Release
 
+# v2 Tauri 2 release pipeline:
+# - 触发方式:
+#     - tag 推 v<x.y.z> 自动跑(无 dry-run)
+#     - `gh workflow run release.yml -f version=<x.y.z>` 手动跑(prepare job 自动建 tag)
+#     - `gh workflow run release.yml -f version=<x.y.z> -f dry_run=true` 只 build 不发 release
+# - 4 platform: macOS arm64 / macOS Intel / Windows x64 / Linux x86_64
+# - 全部走 `cargo tauri build`(无 Python / 无 PowerShell shim)
+# - 产物前缀 `CC-Desktop-Switch-v<v>-<platform>.<ext>`(forward-looking 命名,
+#   旧 codex-app-transfer 前缀历史 release 见 docs/CHANGELOG.md)
+# - 默认创建 **draft release**(全局规则: release 默认 draft,等用户确认转 Latest)
+# - 跳过 RSA signing + xtask release-bundle: Phase 2 cc-desktop-switch 自己 release key
+#   就绪后启用,见 docs/refactor/codex-app-transfer-id-cleanup.md
+# - 跳过 Authenticode codesign:secrets 未配置,Windows Defender 弹"未知发布者"
+#   提示属预期,用户用 .sha256 校验
+
 on:
   push:
     tags:
@@ -7,21 +22,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version without v prefix, for example 1.0.20"
+        description: "Release version without v prefix, for example 2.2.0"
         required: true
-        type: string
       dry_run:
         description: "Build and verify assets without creating a tag or publishing a release"
-        required: false
         type: boolean
         default: false
-
-permissions:
-  contents: write
-
-concurrency:
-  group: release-${{ github.event.inputs.version || github.ref_name }}
-  cancel-in-progress: false
 
 jobs:
   prepare:
@@ -50,12 +56,10 @@ jobs:
           if [[ -z "$version" ]]; then
             version="${REF_NAME#v}"
           fi
-
           if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){2}([-.][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release version: $version" >&2
             exit 1
           fi
-
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
           dry_run="${{ github.event.inputs.dry_run || 'false' }}"
@@ -66,7 +70,7 @@ jobs:
             echo "checkout_ref=v$version" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Ensure release tag for manual run
+      - name: Ensure release tag (manual run only)
         if: github.event_name == 'workflow_dispatch' && steps.release.outputs.dry_run != 'true'
         shell: bash
         run: |
@@ -87,161 +91,44 @@ jobs:
             git push origin "$tag"
           fi
 
-  build_windows:
-    name: Build Windows x64
-    runs-on: windows-latest
-    needs: prepare
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.checkout_ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Python dependencies
-        shell: powershell
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Install NSIS
-        shell: powershell
-        run: choco install nsis -y --no-progress
-
-      - name: Build Windows release assets
-        shell: powershell
-        env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
-          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
-        run: |
-          $args = @(
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-File", "scripts\New-Release.ps1",
-            "-Version", $env:RELEASE_VERSION,
-            "-OutputDir", "release-staging",
-            "-Build",
-            "-TryInstaller",
-            "-SkipManifest",
-            "-Repository", $env:GITHUB_REPOSITORY
-          )
-
-          if ($env:WINDOWS_CODESIGN_PFX_BASE64) {
-            $args += "-CodeSign"
-          }
-
-          powershell @args
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-          $required = @(
-            "release-staging\CC-Desktop-Switch-v$env:RELEASE_VERSION-Windows-x64.exe",
-            "release-staging\CC-Desktop-Switch-v$env:RELEASE_VERSION-Windows-Portable.zip"
-          )
-          foreach ($path in $required) {
-            if (-not (Test-Path -LiteralPath $path)) {
-              throw "Required Windows artifact missing: $path"
-            }
-          }
-
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-windows-x64
-          path: release-staging/*
-          if-no-files-found: error
-          retention-days: 7
-
-  build_macos:
+  build_macos_arm64:
     name: Build macOS arm64
     runs-on: macos-14
     needs: prepare
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.11"
+          workspaces: ". -> target"
 
-      - name: Build macOS assets
-        shell: bash
+      - name: Build (dmg + app)
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          CARGO_TARGET_DIR: target
+        run: cargo tauri build --bundles app,dmg --target aarch64-apple-darwin
+
+      - name: Stage + rename macOS artifacts
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          arch="$(uname -m)"
-          if [[ "$arch" != "arm64" ]]; then
-            echo "Expected macOS arm64 runner, got: $arch" >&2
-            exit 1
-          fi
+          mkdir -p release-staging
+          dmg_src="src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/CC Desktop Switch_${VERSION}_aarch64.dmg"
+          dmg_dst="release-staging/CC-Desktop-Switch-v${VERSION}-macOS-arm64.dmg"
+          cp "$dmg_src" "$dmg_dst"
+          shasum -a 256 "$dmg_dst" | awk '{print $1}' > "$dmg_dst.sha256"
+          hdiutil verify "$dmg_dst"
 
-          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-          echo "RELEASE_ARCH=arm64" >> "$GITHUB_ENV"
-          CCDS_VERSION="$RELEASE_VERSION" ./macos/build-macos.sh
-
-      - name: Smoke test macOS app bundle
-        shell: bash
-        run: |
-          app_exe="dist/mac/CC Desktop Switch.app/Contents/MacOS/CC-Desktop-Switch"
-          if [[ ! -x "$app_exe" ]]; then
-            echo "App executable not found: $app_exe" >&2
-            exit 1
-          fi
-
-          export HOME="$RUNNER_TEMP/ccds-home"
-          mkdir -p "$HOME"
-          "$app_exe" --server-only --port 19081 > "$RUNNER_TEMP/ccds-macos-smoke.log" 2>&1 &
-          app_pid=$!
-          cleanup() {
-            kill "$app_pid" 2>/dev/null || true
-            wait "$app_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          ok=0
-          for _ in {1..60}; do
-            if curl -fsS "http://127.0.0.1:19081/api/ready" >/dev/null; then
-              ok=1
-              break
-            fi
-            sleep 1
-          done
-
-          if [[ "$ok" != "1" ]]; then
-            cat "$RUNNER_TEMP/ccds-macos-smoke.log" >&2
-            exit 1
-          fi
-
-      - name: Verify macOS packages
-        shell: bash
-        run: |
-          pkg="dist/mac/CC-Desktop-Switch-v${RELEASE_VERSION}-macOS-arm64.pkg"
-          dmg="dist/mac/CC-Desktop-Switch-v${RELEASE_VERSION}-macOS-arm64.dmg"
-
-          test -f "$pkg"
-          test -f "$dmg"
-          pkgutil --expand "$pkg" "$RUNNER_TEMP/pkg-expanded"
-          hdiutil verify "$dmg"
-
-      - name: Upload macOS artifacts
+      - name: Upload macOS arm64 artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-macos-arm64
-          path: |
-            dist/mac/CC-Desktop-Switch-v${{ needs.prepare.outputs.version }}-macOS-arm64.pkg
-            dist/mac/CC-Desktop-Switch-v${{ needs.prepare.outputs.version }}-macOS-arm64.dmg
+          path: release-staging/*
           if-no-files-found: error
           retention-days: 7
 
@@ -249,218 +136,227 @@ jobs:
     name: Build macOS x64
     runs-on: macos-15-intel
     needs: prepare
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.11"
+          workspaces: ". -> target"
 
-      - name: Build macOS assets
-        shell: bash
+      - name: Build (dmg + app)
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          CARGO_TARGET_DIR: target
+        run: cargo tauri build --bundles app,dmg --target x86_64-apple-darwin
+
+      - name: Stage + rename macOS Intel artifacts
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          arch="$(uname -m)"
-          if [[ "$arch" != "x86_64" ]]; then
-            echo "Expected macOS x86_64 runner, got: $arch" >&2
-            exit 1
-          fi
+          mkdir -p release-staging
+          dmg_src="src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/CC Desktop Switch_${VERSION}_x64.dmg"
+          dmg_dst="release-staging/CC-Desktop-Switch-v${VERSION}-macOS-x64.dmg"
+          cp "$dmg_src" "$dmg_dst"
+          shasum -a 256 "$dmg_dst" | awk '{print $1}' > "$dmg_dst.sha256"
+          hdiutil verify "$dmg_dst"
 
-          echo "RELEASE_VERSION=$RELEASE_VERSION" >> "$GITHUB_ENV"
-          echo "RELEASE_ARCH=x64" >> "$GITHUB_ENV"
-          CCDS_VERSION="$RELEASE_VERSION" ./macos/build-macos.sh
-
-      - name: Smoke test macOS app bundle
-        shell: bash
-        run: |
-          app_exe="dist/mac/CC Desktop Switch.app/Contents/MacOS/CC-Desktop-Switch"
-          if [[ ! -x "$app_exe" ]]; then
-            echo "App executable not found: $app_exe" >&2
-            exit 1
-          fi
-
-          export HOME="$RUNNER_TEMP/ccds-home"
-          mkdir -p "$HOME"
-          "$app_exe" --server-only --port 19081 > "$RUNNER_TEMP/ccds-macos-smoke.log" 2>&1 &
-          app_pid=$!
-          cleanup() {
-            kill "$app_pid" 2>/dev/null || true
-            wait "$app_pid" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-
-          ok=0
-          for _ in {1..60}; do
-            if curl -fsS "http://127.0.0.1:19081/api/ready" >/dev/null; then
-              ok=1
-              break
-            fi
-            sleep 1
-          done
-
-          if [[ "$ok" != "1" ]]; then
-            cat "$RUNNER_TEMP/ccds-macos-smoke.log" >&2
-            exit 1
-          fi
-
-      - name: Verify macOS packages
-        shell: bash
-        run: |
-          pkg="dist/mac/CC-Desktop-Switch-v${RELEASE_VERSION}-macOS-x64.pkg"
-          dmg="dist/mac/CC-Desktop-Switch-v${RELEASE_VERSION}-macOS-x64.dmg"
-
-          test -f "$pkg"
-          test -f "$dmg"
-          pkgutil --expand "$pkg" "$RUNNER_TEMP/pkg-expanded"
-          hdiutil verify "$dmg"
-
-      - name: Upload macOS artifacts
+      - name: Upload macOS Intel artifact
         uses: actions/upload-artifact@v4
         with:
           name: release-macos-x64
-          path: |
-            dist/mac/CC-Desktop-Switch-v${{ needs.prepare.outputs.version }}-macOS-x64.pkg
-            dist/mac/CC-Desktop-Switch-v${{ needs.prepare.outputs.version }}-macOS-x64.dmg
+          path: release-staging/*
           if-no-files-found: error
           retention-days: 7
 
-  publish_release:
-    name: Publish release
+  build_windows:
+    name: Build Windows x64
     runs-on: windows-latest
-    needs:
-      - prepare
-      - build_windows
-      - build_macos
-      - build_macos_intel
-
+    needs: prepare
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
 
-      - name: Download release artifacts
-        uses: actions/download-artifact@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
         with:
-          path: release-staging
-          merge-multiple: true
+          workspaces: ". -> target"
 
-      - name: Generate manifest and signatures
-        shell: powershell
+      - name: Build (nsis + msi)
         env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          $notesPath = "docs\release-notes-v$env:RELEASE_VERSION.md"
-          $args = @(
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-File", "scripts\New-ReleaseManifest.ps1",
-            "-Version", $env:RELEASE_VERSION,
-            "-StagingDir", "release-staging",
-            "-Repository", $env:GITHUB_REPOSITORY,
-            "-RequiredPlatforms", "windows-x64,macos-arm64,macos-x64"
-          )
-          if (Test-Path -LiteralPath $notesPath) {
-            $args += @("-NotesFile", $notesPath)
-          }
+          CARGO_TARGET_DIR: target
+        run: cargo tauri build --bundles nsis,msi
 
-          powershell @args
-          if ($LASTEXITCODE -ne 0) {
-            exit $LASTEXITCODE
-          }
-
-      - name: Verify release signatures
-        shell: powershell
-        run: |
-          $publicKey = "release-staging\CC-Desktop-Switch-release-public.pem"
-          $files = Get-ChildItem -LiteralPath "release-staging" -File |
-            Where-Object {
-              $_.Name -ne "CC-Desktop-Switch-release-public.pem" -and
-              $_.Name -notlike "*.sha256" -and
-              $_.Name -notlike "*.sig"
-            }
-
-          foreach ($file in $files) {
-            powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-ReleaseSignature.ps1 -File $file.FullName -PublicKey $publicKey
-            if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-            }
-          }
-
-      - name: Publish GitHub Release
-        if: needs.prepare.outputs.dry_run != 'true'
-        shell: powershell
+      - name: Stage + rename Windows artifacts
+        shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          function Invoke-Gh {
-            gh @args
-            if ($LASTEXITCODE -ne 0) {
-              throw "gh $($args -join ' ') failed with exit code $LASTEXITCODE"
-            }
-          }
+          New-Item -ItemType Directory -Force release-staging | Out-Null
 
-          $tag = $env:RELEASE_TAG
-          $notesPath = "docs\release-notes-v$env:RELEASE_VERSION.md"
-          $notesFile = Join-Path $env:RUNNER_TEMP "release-notes.md"
-          if (Test-Path -LiteralPath $notesPath) {
-            Copy-Item -LiteralPath $notesPath -Destination $notesFile -Force
-          } else {
-            Set-Content -LiteralPath $notesFile -Value "Release for CC Desktop Switch v$env:RELEASE_VERSION." -Encoding utf8
-          }
+          # Tauri default: src-tauri/target/release/bundle/nsis/CC Desktop Switch_<v>_x64-setup.exe
+          $nsisSrc = "src-tauri/target/release/bundle/nsis/CC Desktop Switch_${env:VERSION}_x64-setup.exe"
+          $nsisDst = "release-staging/CC-Desktop-Switch-v${env:VERSION}-Windows-x64-Setup.exe"
+          Copy-Item -LiteralPath $nsisSrc -Destination $nsisDst
+          Get-FileHash -Algorithm SHA256 -LiteralPath $nsisDst | ForEach-Object { $_.Hash.ToLower() } | Out-File -Encoding ascii "$nsisDst.sha256"
 
-          $oldEAP = $ErrorActionPreference
-          $ErrorActionPreference = "SilentlyContinue"
-          $isDraft = gh release view $tag --repo $env:GITHUB_REPOSITORY --json isDraft --jq ".isDraft" 2>$null
-          $viewExitCode = $LASTEXITCODE
-          $ErrorActionPreference = $oldEAP
+          # Tauri default: src-tauri/target/release/bundle/msi/CC Desktop Switch_<v>_x64_en-US.msi
+          $msiSrc = "src-tauri/target/release/bundle/msi/CC Desktop Switch_${env:VERSION}_x64_en-US.msi"
+          $msiDst = "release-staging/CC-Desktop-Switch-v${env:VERSION}-Windows-x64.msi"
+          Copy-Item -LiteralPath $msiSrc -Destination $msiDst
+          Get-FileHash -Algorithm SHA256 -LiteralPath $msiDst | ForEach-Object { $_.Hash.ToLower() } | Out-File -Encoding ascii "$msiDst.sha256"
 
-          if ($viewExitCode -eq 0) {
-            if ($isDraft.Trim() -ne "true") {
-              throw "Release $tag already exists and is not a draft."
-            }
-            Invoke-Gh release edit $tag --repo $env:GITHUB_REPOSITORY --title "CC Desktop Switch $tag" --notes-file $notesFile --verify-tag
-          } else {
-            Invoke-Gh release create $tag --repo $env:GITHUB_REPOSITORY --draft --title "CC Desktop Switch $tag" --notes-file $notesFile --verify-tag
-          }
-
-          $ErrorActionPreference = "SilentlyContinue"
-          $existingAssetsText = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets --jq ".assets[].name" 2>$null
-          $assetsExitCode = $LASTEXITCODE
-          $ErrorActionPreference = $oldEAP
-
-          if ($assetsExitCode -eq 0) {
-            $existingAssets = $existingAssetsText -split "\r?\n"
-            foreach ($asset in $existingAssets) {
-              if ($asset) {
-                Invoke-Gh release delete-asset $tag $asset --repo $env:GITHUB_REPOSITORY --yes
-              }
-            }
-          }
-
-          $assets = Get-ChildItem -LiteralPath "release-staging" -File | Sort-Object Name | ForEach-Object { $_.FullName }
-          if (-not $assets) {
-            throw "No release assets found."
-          }
-
-          Invoke-Gh release upload $tag @assets --repo $env:GITHUB_REPOSITORY --clobber
-          Invoke-Gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --latest --verify-tag
-
-      - name: Upload dry-run release staging
-        if: needs.prepare.outputs.dry_run == 'true'
+      - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-dry-run-complete
+          name: release-windows-x64
           path: release-staging/*
           if-no-files-found: error
           retention-days: 7
+
+  build_linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Install Tauri Linux deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libsoup-3.0-dev \
+            patchelf \
+            file
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - name: Build (deb + appimage)
+        env:
+          CARGO_TARGET_DIR: target
+        run: cargo tauri build --bundles deb,appimage
+
+      - name: Stage + rename Linux artifacts
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p release-staging
+          # Tauri default deb name: src-tauri/target/release/bundle/deb/CC Desktop Switch_<v>_amd64.deb
+          deb_src="src-tauri/target/release/bundle/deb/CC Desktop Switch_${VERSION}_amd64.deb"
+          deb_dst="release-staging/CC-Desktop-Switch-v${VERSION}-Linux-x86_64.deb"
+          cp "$deb_src" "$deb_dst"
+          sha256sum "$deb_dst" | awk '{print $1}' > "$deb_dst.sha256"
+
+          appimg_src="src-tauri/target/release/bundle/appimage/CC Desktop Switch_${VERSION}_amd64.AppImage"
+          appimg_dst="release-staging/CC-Desktop-Switch-v${VERSION}-Linux-x86_64.AppImage"
+          cp "$appimg_src" "$appimg_dst"
+          chmod +x "$appimg_dst"
+          sha256sum "$appimg_dst" | awk '{print $1}' > "$appimg_dst.sha256"
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x86_64
+          path: release-staging/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish draft release
+    needs: [prepare, build_macos_arm64, build_macos_intel, build_windows, build_linux]
+    if: needs.prepare.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-staging
+          pattern: release-*
+          merge-multiple: true
+
+      - name: Inspect collected assets
+        run: |
+          echo "=== release-staging/ ==="
+          ls -la release-staging/
+          echo ""
+          echo "=== required asset count(本 release 至少要 6 个 + 6 个 sha256)==="
+          find release-staging -maxdepth 1 -type f | wc -l
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          notes="CC Desktop Switch ${TAG}
+
+          v2 Rust + Tauri 2 release。Phase 2(cc-desktop-switch 自己 release key
+          + 内部 ID rename)就绪前,本版本暂不包含 RSA signing 与 latest.json
+          自动更新清单 —— 请用同名 \`.sha256\` 文件校验下载完整性。
+
+          各平台资产:
+          - macOS Apple Silicon: \`CC-Desktop-Switch-v${VERSION}-macOS-arm64.dmg\`
+          - macOS Intel x64:     \`CC-Desktop-Switch-v${VERSION}-macOS-x64.dmg\`
+          - Windows x64 NSIS:    \`CC-Desktop-Switch-v${VERSION}-Windows-x64-Setup.exe\`
+          - Windows x64 MSI:     \`CC-Desktop-Switch-v${VERSION}-Windows-x64.msi\`
+          - Linux deb:           \`CC-Desktop-Switch-v${VERSION}-Linux-x86_64.deb\`
+          - Linux AppImage:      \`CC-Desktop-Switch-v${VERSION}-Linux-x86_64.AppImage\`
+
+          Windows 暂未做 Authenticode 代码签名,系统可能提示未知发布者;macOS
+          未做开发者签名 + 公证,首次启动右键→打开。
+          "
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "CC Desktop Switch $TAG" \
+              --notes "$notes" \
+              --draft \
+              --verify-tag
+          else
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --title "CC Desktop Switch $TAG" \
+              --notes "$notes" \
+              --draft \
+              --verify-tag
+          fi
+
+          assets=(release-staging/*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No release assets found." >&2
+            exit 1
+          fi
+          gh release upload "$TAG" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Summary
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          echo "Draft release: https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "请手动 review draft 内容 + 资产,确认无误后再 \`gh release edit ${TAG} --draft=false --latest\` 转 Latest。" >> "$GITHUB_STEP_SUMMARY"
