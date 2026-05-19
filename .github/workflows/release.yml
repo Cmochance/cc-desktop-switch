@@ -29,6 +29,12 @@ on:
         type: boolean
         default: false
 
+# 全 workflow 默认 contents: write —— prepare job 需要 push 新 tag
+# (`git push origin v<version>`),release job 需要 create + upload assets。
+# 不写 permissions 时 GITHUB_TOKEN 默认 read-only,prepare 步会 403 Forbidden。
+permissions:
+  contents: write
+
 jobs:
   prepare:
     name: Prepare release
