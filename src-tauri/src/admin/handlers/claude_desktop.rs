@@ -19,10 +19,14 @@ use codex_app_transfer_claude_desktop::{
     apply::{ApplyConfig, ApplyResult},
     apply_provider, build_proxy_router, builtin_presets, claude_desktop_proxy_log_dir,
     claude_desktop_proxy_telemetry, generate_gateway_api_key, has_snapshot, list_snapshots,
-    load_config, macos as cd_macos, restore_state, save_config,
+    load_config, restore_state, save_config,
     schema::{ClaudeDesktopConfig, Provider as ClaudeDesktopProvider},
     ClaudeDesktopPaths, ClaudeDesktopProxyState, CD_PROXY_BIND, CD_PROXY_PORT,
 };
+// macos 子模块 gated 在 `#[cfg(any(target_os = "macos", test))]`(crates/claude_desktop/src/lib.rs:36),
+// CI 跑 Linux 时不可用 → 把 import 拆到 cfg-gated 块,避免 unresolved import。
+#[cfg(target_os = "macos")]
+use codex_app_transfer_claude_desktop::macos as cd_macos;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
