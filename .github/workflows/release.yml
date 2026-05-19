@@ -106,7 +106,15 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
+          # 同时 cache ~/.cargo/bin 让 tauri-cli 跨 run 复用
           workspaces: ". -> target"
+          cache-all-crates: true
+      - name: Install Tauri CLI
+        # CI runners 没预装 cargo-tauri,而本仓 Makefile / release pipeline 全部
+        # 调 `cargo tauri build`。Swatinem/rust-cache `cache-all-crates: true`
+        # 会 cache ~/.cargo/bin,首次跑 ~3-5 min,后续 run 命中缓存秒过。
+        # `--force` 避免"already installed"非零退出(版本一致时也强制重跑,no-op)。
+        run: cargo install tauri-cli --version "^2" --locked --force
 
       - name: Build (dmg + app)
         env:
@@ -147,7 +155,15 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
+          # 同时 cache ~/.cargo/bin 让 tauri-cli 跨 run 复用
           workspaces: ". -> target"
+          cache-all-crates: true
+      - name: Install Tauri CLI
+        # CI runners 没预装 cargo-tauri,而本仓 Makefile / release pipeline 全部
+        # 调 `cargo tauri build`。Swatinem/rust-cache `cache-all-crates: true`
+        # 会 cache ~/.cargo/bin,首次跑 ~3-5 min,后续 run 命中缓存秒过。
+        # `--force` 避免"already installed"非零退出(版本一致时也强制重跑,no-op)。
+        run: cargo install tauri-cli --version "^2" --locked --force
 
       - name: Build (dmg + app)
         env:
@@ -188,7 +204,15 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
+          # 同时 cache ~/.cargo/bin 让 tauri-cli 跨 run 复用
           workspaces: ". -> target"
+          cache-all-crates: true
+      - name: Install Tauri CLI
+        # CI runners 没预装 cargo-tauri,而本仓 Makefile / release pipeline 全部
+        # 调 `cargo tauri build`。Swatinem/rust-cache `cache-all-crates: true`
+        # 会 cache ~/.cargo/bin,首次跑 ~3-5 min,后续 run 命中缓存秒过。
+        # `--force` 避免"already installed"非零退出(版本一致时也强制重跑,no-op)。
+        run: cargo install tauri-cli --version "^2" --locked --force
 
       - name: Build (nsis + msi)
         env:
@@ -249,7 +273,15 @@ jobs:
       - name: Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
+          # 同时 cache ~/.cargo/bin 让 tauri-cli 跨 run 复用
           workspaces: ". -> target"
+          cache-all-crates: true
+      - name: Install Tauri CLI
+        # CI runners 没预装 cargo-tauri,而本仓 Makefile / release pipeline 全部
+        # 调 `cargo tauri build`。Swatinem/rust-cache `cache-all-crates: true`
+        # 会 cache ~/.cargo/bin,首次跑 ~3-5 min,后续 run 命中缓存秒过。
+        # `--force` 避免"already installed"非零退出(版本一致时也强制重跑,no-op)。
+        run: cargo install tauri-cli --version "^2" --locked --force
 
       - name: Build (deb + appimage)
         env:
