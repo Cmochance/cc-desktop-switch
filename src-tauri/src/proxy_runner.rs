@@ -1,28 +1,24 @@
-//! 内嵌 axum 代理生命周期管理(Stage 4.3 + Stage 5).
+//! 内嵌 axum 代理生命周期管理。
 //!
-//! Tauri 主进程启动时构造一个 [`ProxyManager`] 注入到 `State<T>`,前端通过
-//! `start_proxy` / `stop_proxy` / `proxy_status` 命令操控,Tauri 主进程
-//! 退出时通过 [`ProxyManager::stop_silent`] **同步**关闭代理。
+//! **核心设计**:proxy 跑在**独立 `std::thread` + 独立 `tokio::runtime::Runtime`**。
+//! stop 时把整个 Runtime drop(`shutdown_background()`)——
+//! - 所有 spawn 在 runtime 上的 task **同步 abort**
+//! - worker thread 退出 → 没人 poll task → task drop
+//! - task 持有的 `TcpStream` / `TcpListener` 跟着 drop → fd close
+//! - **所有 proxy 相关功能一锅端,只保留 Tauri 主界面**
 //!
-//! 设计要点:
-//! - 内部 `std::sync::Mutex<Option<ProxyHandle>>` —— 锁持有时间极短(只读/写
-//!   单个 Option),没有跨 await,**stop / status / stop_silent 全部是同步方法**,
-//!   方便从 Tauri 的 `RunEvent::Exit` 同步路径调用而不需要 `block_on`。
-//! - **`start` 是 async**(TcpListener::bind 必需),但锁取放都在显式 scope 里,
-//!   不跨越 await。
-//! - **生命周期**:`start` 时 spawn tokio task 持有 `axum::serve` future,附带
-//!   `with_graceful_shutdown(oneshot::Receiver<()>)`;`stop` / `stop_silent`
-//!   通过 `oneshot::Sender::send(())` 触发 graceful 关停。
+//! 不再使用 CancellationToken / JoinSet / 自己写 accept loop / raw fd shutdown /
+//! application-level gate middleware 等"兜底逻辑"—— `Runtime::shutdown_background`
+//! 是 tokio 提供的 OS-level "杀光所有 task" 原语,不需要 user-space cancel chain。
 
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 
 use codex_app_transfer_proxy::{build_router, StaticResolver};
 use codex_app_transfer_registry::{config_file, Config};
 use serde::Serialize;
-use tokio::net::TcpListener;
 use tokio::sync::oneshot;
-use tokio::task::JoinHandle;
 
 #[derive(Debug, Serialize, Clone)]
 pub struct ProxyStatus {
@@ -37,16 +33,10 @@ pub struct ProxyStatus {
 
 struct ProxyHandle {
     addr: SocketAddr,
-    shutdown_tx: oneshot::Sender<()>,
-    /// axum::serve task 的 JoinHandle — stop / stop_silent 在发 graceful
-    /// shutdown 信号**之后**立刻 task.abort() 强制 drop server future,
-    /// listener 同步 drop → 端口立刻释放。
-    ///
-    /// 修 silent failure:graceful_shutdown 等所有 in-flight connection
-    /// 完成才 drop listener,SSE / long-polling / hung connection 可能
-    /// 永远等不到 → 端口不释放,但 UI / log 已 "stopped" → 用户感知
-    /// "停了但端口还占"。abort 保证 stop_silent 同步返时端口必释放。
-    task: JoinHandle<()>,
+    /// **核心**:proxy 跑在这个独立 runtime 上,stop_silent 时调
+    /// `shutdown_background()` 一键 abort 所有 task + worker thread 退出
+    /// → 所有 fd / 资源 cleanup。
+    runtime: tokio::runtime::Runtime,
     gateway_auth: bool,
     provider_count: usize,
     active_provider: Option<String>,
@@ -64,7 +54,7 @@ impl ProxyManager {
 
     /// 启动代理监听 `127.0.0.1:<port>`。已 running 时沿用旧版语义返回当前状态。
     pub async fn start(&self, port: u16) -> Result<ProxyStatus, String> {
-        // 1. 预检查(短锁)
+        // 1. 预检查
         {
             let guard = self.handle.lock().unwrap();
             if let Some(h) = guard.as_ref() {
@@ -78,39 +68,74 @@ impl ProxyManager {
             }
         }
 
-        // 2. 装载 resolver + 绑定 listener(async)
+        // 2. 装载 resolver
         let snapshot = load_resolver_snapshot()?;
-        let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-            .await
-            .map_err(|e| format!("bind 127.0.0.1:{port} failed: {e}"))?;
-        let addr = listener
-            .local_addr()
-            .map_err(|e| format!("cannot read listener address: {e}"))?;
-        let router = build_router(Arc::new(snapshot.resolver));
-        let (tx, rx) = oneshot::channel::<()>();
-        let task = tokio::spawn(async move {
-            let _ = axum::serve(listener, router.into_make_service())
-                .with_graceful_shutdown(async move {
-                    let _ = rx.await;
-                })
-                .await;
-        });
 
-        // 3. 落盘 handle(短锁;若期间被另一路径插入,关掉自己回滚)
+        // 3. 创建 dedicated runtime + 启 server
+        //    Runtime::new 不能在 async context 内调,用 std::thread 包。
+        //    用 tokio::sync::oneshot 而非 std::sync::mpsc,让 receiver 端 .await
+        //    yield Tauri worker thread 而不是同步 block(Devin review fix)。
+        let (addr_tx, addr_rx) =
+            oneshot::channel::<Result<(SocketAddr, tokio::runtime::Runtime), String>>();
+        let resolver = Arc::new(snapshot.resolver);
+        std::thread::Builder::new()
+            .name(format!("cas-proxy-bootstrap-{port}"))
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .worker_threads(2)
+                    .thread_name("cas-proxy")
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        let _ = addr_tx.send(Err(format!("create proxy runtime failed: {e}")));
+                        return;
+                    }
+                };
+                let bind_result = rt.block_on(async {
+                    let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
+                        .await
+                        .map_err(|e| format!("bind 127.0.0.1:{port} failed: {e}"))?;
+                    let addr = listener
+                        .local_addr()
+                        .map_err(|e| format!("cannot read listener address: {e}"))?;
+                    let router = build_router(resolver);
+                    // 在 runtime 上 spawn server —— 当 runtime shutdown_background
+                    // 时此 task 同步被 abort,listener + 所有 connection sub-task
+                    // 一起 drop,fd close。
+                    rt.spawn(async move {
+                        let _ = axum::serve(listener, router.into_make_service()).await;
+                    });
+                    Ok::<SocketAddr, String>(addr)
+                });
+                match bind_result {
+                    Ok(addr) => {
+                        let _ = addr_tx.send(Ok((addr, rt)));
+                    }
+                    Err(e) => {
+                        rt.shutdown_background();
+                        let _ = addr_tx.send(Err(e));
+                    }
+                }
+            })
+            .map_err(|e| format!("spawn proxy thread failed: {e}"))?;
+
+        let (addr, runtime) = addr_rx
+            .await
+            .map_err(|_| "proxy bootstrap channel closed".to_owned())??;
+
+        // 4. 落盘 handle(短锁;若期间被另一路径插入,关掉自己回滚)
         let new_handle = ProxyHandle {
             addr,
-            shutdown_tx: tx,
-            task,
+            runtime,
             gateway_auth: snapshot.gateway_auth,
             provider_count: snapshot.provider_count,
             active_provider: snapshot.active_provider.clone(),
         };
         let mut guard = self.handle.lock().unwrap();
         if guard.is_some() {
-            // race condition,自己的 listener 让出去:发 shutdown + abort task
-            // (abort 同步 drop listener,端口立刻释放,不依赖 graceful drain)
-            let _ = new_handle.shutdown_tx.send(());
-            new_handle.task.abort();
+            new_handle.runtime.shutdown_background();
             return Err("proxy already started by another path".to_owned());
         }
         *guard = Some(new_handle);
@@ -123,34 +148,31 @@ impl ProxyManager {
         })
     }
 
-    /// 触发 graceful shutdown 后立刻 abort task 释放端口。未 running 时报错。
+    /// 停止转发 —— 一键 drop 整个 dedicated runtime,所有 spawn task 同步 abort,
+    /// worker thread 退出,所有 fd / 连接 cleanup,**只保留 Tauri 主界面**。
     ///
-    /// **为什么两步**:`shutdown_tx.send(())` 给 axum graceful drain 机会让
-    /// 正常完成的 request 跑完;紧跟 `task.abort()` 同步 drop server future
-    /// → listener drop → **端口立刻释放**,不会卡在 in-flight SSE / long
-    /// polling / hung connection 上(那种 connection 可能永远 drain 不完)。
-    /// 代价:in-flight connection 被强断,client 见 connection reset —
-    /// 但"用户点停止 = 真要停",这是合理 trade-off。
+    /// `Runtime::shutdown_background` 是 tokio 显式提供的 "from within another
+    /// runtime 安全 shutdown" API,不触发 "async context drop runtime" panic
+    /// (tokio docs: "useful if you want to drop a runtime from within another
+    /// runtime")。所以即使 stop_proxy admin handler 是 async fn 在此调用,
+    /// 也无需 std::thread 包装。
     #[allow(dead_code)]
     pub fn stop(&self) -> Result<(), String> {
         let mut guard = self.handle.lock().unwrap();
         match guard.take() {
             Some(h) => {
-                let _ = h.shutdown_tx.send(());
-                h.task.abort();
+                h.runtime.shutdown_background();
                 Ok(())
             }
             None => Err("proxy is not running".to_owned()),
         }
     }
 
-    /// 静默 stop:用于 app exit / 异常路径,不报错只尽力关。
-    /// 同样走 send signal + abort 双保险确保端口释放(详见 [`Self::stop`])。
+    /// 静默 stop:app exit / 异常路径用,不报错只尽力关。
     pub fn stop_silent(&self) {
         let mut guard = self.handle.lock().unwrap();
         if let Some(h) = guard.take() {
-            let _ = h.shutdown_tx.send(());
-            h.task.abort();
+            h.runtime.shutdown_background();
         }
     }
 
