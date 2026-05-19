@@ -527,62 +527,43 @@
 
       <section class="page" id="page-claude-desktop" data-page="claude-desktop">
         <div class="page-title title-with-back">
-          <a class="square-button" href="#dashboard" aria-label="back"><i class="bi bi-arrow-left"></i></a>
+          <a class="square-button" href="#claude-desktop-providers" aria-label="back"><i class="bi bi-arrow-left"></i></a>
           <div>
-            <h1 data-i18n="claudeDesktop.title">Claude Desktop</h1>
-            <p data-i18n="claudeDesktop.subtitle">把 Anthropic-compat 第三方 API 直连写入 Claude Desktop(不走 cas 转发)</p>
+            <h1 data-i18n="claudeDesktop.title">Claude Desktop 配置详情</h1>
+            <p data-i18n="claudeDesktop.subtitle">写入 Claude Desktop 的 inferenceGateway 字段,让客户端走第三方 Anthropic-compat 上游</p>
           </div>
         </div>
 
-        <div class="two-column desktop-layout">
-          <div>
-            <article class="panel desktop-card">
-              <h2 data-i18n="claudeDesktop.configTitle">Claude Desktop 配置</h2>
-              <div class="configured-row" id="claudeDesktopConfiguredRow">
-                <span class="circle-check"><i class="bi bi-dash-lg"></i></span>
-                <strong id="claudeDesktopConfiguredText" data-i18n="claudeDesktop.notConfigured">未配置</strong>
-              </div>
-              <div class="config-list" id="claudeDesktopConfigList"></div>
+        <article class="panel desktop-card claude-desktop-detail-card">
+          <div class="configured-row" id="claudeDesktopConfiguredRow">
+            <span class="circle-check"><i class="bi bi-dash-lg"></i></span>
+            <strong id="claudeDesktopConfiguredText" data-i18n="claudeDesktop.notConfigured">未配置</strong>
+          </div>
+          <div class="config-list" id="claudeDesktopConfigList"></div>
 
-              <div class="settings-row" style="margin-top: 12px;">
-                <label data-i18n="claudeDesktop.provider">使用预设</label>
-                <select id="claudeDesktopProviderSelect" class="form-select"></select>
-              </div>
-              <div class="settings-row">
-                <label data-i18n="claudeDesktop.apiKey">API Key</label>
-                <input type="password" id="claudeDesktopApiKeyInput" class="form-control" placeholder="sk-..." autocomplete="off" />
-              </div>
+          <div class="settings-row settings-row-stack">
+            <label for="claudeDesktopProviderSelect" data-i18n="claudeDesktop.provider">使用预设</label>
+            <select id="claudeDesktopProviderSelect" class="form-select form-control-lg"></select>
+          </div>
+          <div class="settings-row settings-row-stack">
+            <label for="claudeDesktopApiKeyInput" data-i18n="claudeDesktop.apiKey">API Key</label>
+            <input type="password" id="claudeDesktopApiKeyInput" class="form-control form-control-lg" placeholder="sk-..." autocomplete="off">
+          </div>
 
-              <div class="apply-explain desktop-explain">
-                <i class="bi bi-info-circle"></i>
-                <p data-i18n="claudeDesktop.explainText">本工具写入 Claude Desktop 的 inferenceGateway* 配置,让 Claude Desktop 直连第三方 Anthropic-compat 上游(`https://api.deepseek.com/anthropic` 等)。完成后即使关闭本工具,Claude Desktop 仍可继续使用。</p>
-              </div>
-              <button class="btn btn-primary btn-lg w-100" type="button" data-action="apply-claude-desktop">
-                <i class="bi bi-download"></i><span data-i18n="claudeDesktop.apply">一键应用</span>
-              </button>
-            </article>
-            <article class="panel details-panel">
-              <div class="panel-header">
-                <h2 data-i18n="claudeDesktop.details">当前 Claude Desktop 状态</h2>
-                <i class="bi bi-chevron-down"></i>
-              </div>
-              <pre class="code-block" id="claudeDesktopJson"></pre>
-            </article>
-            <button class="btn btn-outline-danger btn-lg w-100 danger-outline" type="button" data-action="clear-claude-desktop">
+          <div class="detail-actions">
+            <button class="btn btn-primary btn-lg" type="button" data-action="apply-claude-desktop">
+              <i class="bi bi-download"></i><span data-i18n="claudeDesktop.apply">一键应用</span>
+            </button>
+            <button class="btn btn-outline-danger btn-lg" type="button" data-action="clear-claude-desktop">
               <i class="bi bi-arrow-counterclockwise"></i><span data-i18n="claudeDesktop.clear">还原 Claude Desktop 原配置</span>
             </button>
           </div>
 
-          <article class="panel guide-panel">
-            <h2 data-i18n="claudeDesktop.quickGuide">使用说明</h2>
-            <div class="mini-steps">
-              <div class="mini-step"><span>1</span><i class="bi bi-list-check"></i><strong data-i18n="claudeDesktop.step1Title">选择 Provider 预设</strong><p data-i18n="claudeDesktop.step1Text">7 个内置:DeepSeek / Kimi / Kimi Code / Xiaomi MiMo / 智谱 GLM / 阿里云百炼</p></div>
-              <div class="mini-step"><span>2</span><i class="bi bi-key"></i><strong data-i18n="claudeDesktop.step2Title">填 API Key</strong><p data-i18n="claudeDesktop.step2Text">在对应供应商控制台获取的 API Key</p></div>
-              <div class="mini-step"><span>3</span><i class="bi bi-download"></i><strong data-i18n="claudeDesktop.step3Title">一键应用</strong><p data-i18n="claudeDesktop.step3Text">写入 Claude Desktop 配置 → 重启 Claude Desktop 生效</p></div>
-            </div>
-            <p class="muted" style="margin-top:12px;font-size:0.85em;" data-i18n="claudeDesktop.upstreamCredit">本功能借鉴自 lonr-6/cc-desktop-switch (Apache-2)。</p>
-          </article>
-        </div>
+          <details class="detail-disclosure">
+            <summary><span data-i18n="claudeDesktop.details">当前 Claude Desktop 状态</span><i class="bi bi-chevron-down"></i></summary>
+            <pre class="code-block" id="claudeDesktopJson"></pre>
+          </details>
+        </article>
       </section>
 
       <section class="page" id="page-proxy" data-page="proxy">
