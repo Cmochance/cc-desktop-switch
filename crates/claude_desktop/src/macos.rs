@@ -39,9 +39,8 @@ use crate::ClaudeDesktopError;
 /// (Claude Desktop 1.7196+ 用 `Claude-3p/` 子目录,不是 `Claude/`。
 /// 对照 `cc-desktop-switch/backend/registry.py:340 MAC_3P_CONFIG`)
 pub fn config_json_path() -> Result<PathBuf, ClaudeDesktopError> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned())
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned()))?;
     Ok(home
         .join("Library")
         .join("Application Support")
@@ -74,9 +73,8 @@ const COWORK_EGRESS_ALLOWED_HOSTS_DEFAULT: &str = "*";
 
 /// `~/Library/Preferences/com.anthropic.claudefordesktop.plist`
 pub fn plist_path() -> Result<PathBuf, ClaudeDesktopError> {
-    let home = dirs::home_dir().ok_or_else(|| {
-        ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned())
-    })?;
+    let home = dirs::home_dir()
+        .ok_or_else(|| ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned()))?;
     Ok(home
         .join("Library")
         .join("Preferences")
@@ -100,10 +98,7 @@ pub struct ApplyInput<'a> {
 pub fn compute_field_values(input: &ApplyInput<'_>) -> BTreeMap<&'static str, String> {
     let mut out: BTreeMap<&'static str, String> = BTreeMap::new();
     out.insert("inferenceProvider", "gateway".to_owned());
-    out.insert(
-        "inferenceGatewayApiKey",
-        input.gateway_api_key.to_owned(),
-    );
+    out.insert("inferenceGatewayApiKey", input.gateway_api_key.to_owned());
     out.insert(
         "inferenceGatewayAuthScheme",
         input.provider.auth_scheme.clone(),
@@ -146,7 +141,11 @@ pub fn write_plist(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopError> {
         match PlistValue::from_file(&path) {
             Ok(PlistValue::Dictionary(d)) => d.into_iter().collect(),
             Ok(_) => BTreeMap::new(),
-            Err(e) => return Err(ClaudeDesktopError::SchemaCorrupt(format!("plist 解析失败: {e}"))),
+            Err(e) => {
+                return Err(ClaudeDesktopError::SchemaCorrupt(format!(
+                    "plist 解析失败: {e}"
+                )))
+            }
         }
     } else {
         BTreeMap::new()
@@ -154,10 +153,7 @@ pub fn write_plist(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopError> {
 
     let values = compute_field_values(input);
     for field in DESKTOP_CONFIG {
-        let value = values
-            .get(field.name)
-            .cloned()
-            .unwrap_or_default();
+        let value = values.get(field.name).cloned().unwrap_or_default();
         if field.name == "isClaudeCodeForDesktopEnabled" {
             // integer 字段
             let v: i64 = value.parse().unwrap_or(1);
@@ -166,7 +162,10 @@ pub fn write_plist(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopError> {
             root.insert(field.name.to_owned(), PlistValue::String(value));
         }
     }
-    root.insert(CCDS_MARKER.to_owned(), PlistValue::String("true".to_owned()));
+    root.insert(
+        CCDS_MARKER.to_owned(),
+        PlistValue::String("true".to_owned()),
+    );
 
     // 写回(plist crate 默认输出 XML,Claude Desktop 都能读)
     let dict: plist::Dictionary = root.into_iter().collect();
@@ -185,7 +184,11 @@ pub fn clear_plist() -> Result<(), ClaudeDesktopError> {
     let mut root: BTreeMap<String, PlistValue> = match PlistValue::from_file(&path) {
         Ok(PlistValue::Dictionary(d)) => d.into_iter().collect(),
         Ok(_) => return Ok(()),
-        Err(e) => return Err(ClaudeDesktopError::SchemaCorrupt(format!("plist 解析失败: {e}"))),
+        Err(e) => {
+            return Err(ClaudeDesktopError::SchemaCorrupt(format!(
+                "plist 解析失败: {e}"
+            )))
+        }
     };
     let existing_names: Vec<String> = root.keys().cloned().collect();
     let managed = managed_policy_names(&existing_names);
@@ -228,7 +231,10 @@ pub fn write_config_json(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopErro
         ClaudeDesktopError::SchemaCorrupt("enterpriseConfig 必须是 object".to_owned())
     })?;
 
-    enterprise_obj.insert("inferenceProvider".to_owned(), JsonValue::String("gateway".to_owned()));
+    enterprise_obj.insert(
+        "inferenceProvider".to_owned(),
+        JsonValue::String("gateway".to_owned()),
+    );
     enterprise_obj.insert(
         "inferenceGatewayApiKey".to_owned(),
         JsonValue::String(input.gateway_api_key.to_owned()),
@@ -262,7 +268,10 @@ pub fn write_config_json(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopErro
                 .to_owned(),
         ),
     );
-    enterprise_obj.insert("isClaudeCodeForDesktopEnabled".to_owned(), JsonValue::Bool(true));
+    enterprise_obj.insert(
+        "isClaudeCodeForDesktopEnabled".to_owned(),
+        JsonValue::Bool(true),
+    );
     // `coworkEgressAllowedHosts` policy(`registry.py:547`)—— 1.7196+ 必填,
     // 控制 cowork 出站白名单。默认 `["*"]` 全放行(跟上游一致)。
     enterprise_obj.insert(
@@ -276,7 +285,10 @@ pub fn write_config_json(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopErro
 
     // **关键 sentinel**:顶层 `deploymentMode="3p"` 才让 Claude Desktop 切到
     // 第三方部署模式。这是 1.7196 加的开关(对照 `registry.py:721`)。
-    obj.insert("deploymentMode".to_owned(), JsonValue::String("3p".to_owned()));
+    obj.insert(
+        "deploymentMode".to_owned(),
+        JsonValue::String("3p".to_owned()),
+    );
 
     let serialized = serde_json::to_string_pretty(&root)?;
     std::fs::write(&path, serialized)?;
@@ -388,9 +400,9 @@ pub fn write_config_library(input: &ApplyInput<'_>) -> Result<(), ClaudeDesktopE
         .entry("entries".to_owned())
         .or_insert_with(|| json!([]));
     if let Some(arr) = entries.as_array_mut() {
-        let has = arr.iter().any(|e| {
-            e.get("id").and_then(|x| x.as_str()) == Some(active_id.as_str())
-        });
+        let has = arr
+            .iter()
+            .any(|e| e.get("id").and_then(|x| x.as_str()) == Some(active_id.as_str()));
         if !has {
             arr.push(json!({"id": active_id, "name": "Default"}));
         }
@@ -485,7 +497,10 @@ pub fn clear_config_json() -> Result<(), ClaudeDesktopError> {
     }
     // 顶层 `deploymentMode` 改回 `"clear"`(对照 `registry.py:824 _mac_clear_json_config`)。
     // 这是让 Claude Desktop 切回 1p / 官方账号的关键 sentinel。
-    obj.insert("deploymentMode".to_owned(), JsonValue::String("clear".to_owned()));
+    obj.insert(
+        "deploymentMode".to_owned(),
+        JsonValue::String("clear".to_owned()),
+    );
     let serialized = serde_json::to_string_pretty(&root)?;
     std::fs::write(&path, serialized)?;
     Ok(())
@@ -625,19 +640,28 @@ mod tests {
             gateway_base_url: Some("http://127.0.0.1:18080"),
         };
         let v = compute_field_values(&input);
-        assert_eq!(v.get("inferenceProvider").map(String::as_str), Some("gateway"));
-        assert_eq!(v.get("inferenceGatewayApiKey").map(String::as_str), Some("sk-cas"));
-        assert_eq!(v.get("inferenceGatewayAuthScheme").map(String::as_str), Some("bearer"));
+        assert_eq!(
+            v.get("inferenceProvider").map(String::as_str),
+            Some("gateway")
+        );
+        assert_eq!(
+            v.get("inferenceGatewayApiKey").map(String::as_str),
+            Some("sk-cas")
+        );
+        assert_eq!(
+            v.get("inferenceGatewayAuthScheme").map(String::as_str),
+            Some("bearer")
+        );
         assert_eq!(
             v.get("inferenceGatewayBaseUrl").map(String::as_str),
             Some("http://127.0.0.1:18080")
         );
-        assert_eq!(v.get("isClaudeCodeForDesktopEnabled").map(String::as_str), Some("1"));
+        assert_eq!(
+            v.get("isClaudeCodeForDesktopEnabled").map(String::as_str),
+            Some("1")
+        );
         // headers serialize {apiKey} → sk-cas
-        assert!(v
-            .get("inferenceGatewayHeaders")
-            .unwrap()
-            .contains("sk-cas"));
+        assert!(v.get("inferenceGatewayHeaders").unwrap().contains("sk-cas"));
         // models serialize 走 desktop_model_entries:name = claude-sonnet-4-6
         // (Claude 白名单),不再含 deepseek-v4-pro 这种上游真实 ID。
         let models_json = v.get("inferenceModels").unwrap();
@@ -662,18 +686,17 @@ mod tests {
         let td = TempDir::new().unwrap();
         let path = td.path().join("claude_desktop_config.json");
         // 起点:user 已有 preferences 段(不属我们管),不能被动
-        std::fs::write(
-            &path,
-            r#"{"preferences": {"sidebarMode": "task"}}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, r#"{"preferences": {"sidebarMode": "task"}}"#).unwrap();
 
         // 直接调内部函数(暴露给测试用 helper:实现里读 path 用 home dir,这里
         // 我们手动模拟同样的逻辑写 + clear,验 enterpriseConfig 段操作正确)。
-        let mut root: JsonValue = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let mut root: JsonValue =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         {
             let obj = root.as_object_mut().unwrap();
-            let enterprise = obj.entry("enterpriseConfig".to_owned()).or_insert(json!({}));
+            let enterprise = obj
+                .entry("enterpriseConfig".to_owned())
+                .or_insert(json!({}));
             let e = enterprise.as_object_mut().unwrap();
             for f in DESKTOP_CONFIG {
                 e.insert(f.name.to_owned(), JsonValue::String("test".to_owned()));
@@ -704,7 +727,10 @@ mod tests {
         let final_v: JsonValue =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
         assert!(final_v.get("preferences").is_some(), "user 字段不动");
-        assert!(final_v.get("enterpriseConfig").is_none(), "全 managed 字段后该段清空 → 删");
+        assert!(
+            final_v.get("enterpriseConfig").is_none(),
+            "全 managed 字段后该段清空 → 删"
+        );
     }
 
     #[test]
@@ -712,7 +738,11 @@ mod tests {
         // 仅 sanity:路径含 Library/Application Support / Library/Preferences
         let cfg = config_json_path().unwrap();
         let plist = plist_path().unwrap();
-        assert!(cfg.to_string_lossy().contains("Library/Application Support/Claude-3p/"));
-        assert!(plist.to_string_lossy().contains("Library/Preferences/com.anthropic.claudefordesktop"));
+        assert!(cfg
+            .to_string_lossy()
+            .contains("Library/Application Support/Claude-3p/"));
+        assert!(plist
+            .to_string_lossy()
+            .contains("Library/Preferences/com.anthropic.claudefordesktop"));
     }
 }

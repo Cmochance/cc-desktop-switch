@@ -28,9 +28,7 @@ use axum::{Json, Router};
 use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
-use crate::model_alias::{
-    desktop_model_entries, resolve_requested_model_slot, MODEL_SLOTS,
-};
+use crate::model_alias::{desktop_model_entries, resolve_requested_model_slot, MODEL_SLOTS};
 use crate::schema::Provider;
 use crate::telemetry::claude_desktop_proxy_telemetry;
 
@@ -145,9 +143,7 @@ async fn handle_messages(
     // 1) 验证 gateway key(Claude Desktop 带的是 cas 网关 key,不是上游真 key)
     if let Err(resp) = verify_gateway_key(&headers, &snapshot.gateway_api_key) {
         telemetry.stats.record(false);
-        telemetry
-            .logs
-            .add("ERROR", "gateway key 不匹配,拒绝请求");
+        telemetry.logs.add("ERROR", "gateway key 不匹配,拒绝请求");
         return resp;
     }
 

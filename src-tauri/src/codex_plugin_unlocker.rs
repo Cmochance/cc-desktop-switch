@@ -307,28 +307,20 @@ async fn connect_and_monitor(
     // surface 出来:set Failed status + 返回 Err 让 daemon 走重连。不能 silent
     // (silent 会让 SPA 切路由后注入观测器拿不到 Page.loadEventFired,Plugins
     // 标签 "解锁一次就丢"且无日志,违反 no-silent-failure 偏好)。
-    if let Err(e) =
-        await_cdp_response(&mut read, runtime_enable_id, Duration::from_secs(5)).await
-    {
+    if let Err(e) = await_cdp_response(&mut read, runtime_enable_id, Duration::from_secs(5)).await {
         let msg = format!("Runtime.enable failed: {e}");
         tracing::warn!(target: "plugin_unlock", error = %msg, "CDP enable rejected");
-        *status.write().await = UnlockStatus::Failed {
-            error: msg.clone(),
-        };
+        *status.write().await = UnlockStatus::Failed { error: msg.clone() };
         return Err(msg.into());
     }
 
     // 2. 启用 Page domain(监听刷新事件)
     let (page_enable, page_enable_id) = make_cdp_msg(msg_id_counter, "Page.enable", json!({}));
     write.send(WsMessage::Text(page_enable)).await?;
-    if let Err(e) =
-        await_cdp_response(&mut read, page_enable_id, Duration::from_secs(5)).await
-    {
+    if let Err(e) = await_cdp_response(&mut read, page_enable_id, Duration::from_secs(5)).await {
         let msg = format!("Page.enable failed: {e}");
         tracing::warn!(target: "plugin_unlock", error = %msg, "CDP enable rejected");
-        *status.write().await = UnlockStatus::Failed {
-            error: msg.clone(),
-        };
+        *status.write().await = UnlockStatus::Failed { error: msg.clone() };
         return Err(msg.into());
     }
 

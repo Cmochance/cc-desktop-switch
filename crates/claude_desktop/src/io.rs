@@ -55,7 +55,10 @@ pub fn save_config(
 
 fn write_atomic(path: &Path, data: &[u8]) -> Result<(), ClaudeDesktopError> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "config.json".to_owned());
+    let file_name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "config.json".to_owned());
     let tmp = parent.join(format!(".{file_name}.tmp"));
     std::fs::write(&tmp, data)?;
     std::fs::rename(&tmp, path)?;

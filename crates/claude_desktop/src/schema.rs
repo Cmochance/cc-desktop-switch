@@ -205,10 +205,16 @@ mod tests {
         assert_eq!(provider.base_url, "https://api.deepseek.com/anthropic");
         assert_eq!(provider.auth_scheme, "bearer");
         assert_eq!(provider.api_format, "anthropic");
-        assert_eq!(provider.models.get("sonnet").map(String::as_str), Some("deepseek-v4-pro"));
+        assert_eq!(
+            provider.models.get("sonnet").map(String::as_str),
+            Some("deepseek-v4-pro")
+        );
         assert_eq!(provider.model_options.len(), 1);
         assert_eq!(provider.request_option_presets.len(), 1);
-        assert_eq!(provider.extra_headers.get("x-api-key").map(String::as_str), Some("{apiKey}"));
+        assert_eq!(
+            provider.extra_headers.get("x-api-key").map(String::as_str),
+            Some("{apiKey}")
+        );
         // round-trip 不丢字段
         let reserialized: Value = serde_json::to_value(&provider).unwrap();
         assert_eq!(reserialized.get("id"), raw.get("id"));
@@ -236,7 +242,10 @@ mod tests {
         });
         let provider: Provider = serde_json::from_value(raw.clone()).unwrap();
         let out = serde_json::to_value(&provider).unwrap();
-        assert!(out.get("modelOptions").is_none(), "空 modelOptions 不应被序列化");
+        assert!(
+            out.get("modelOptions").is_none(),
+            "空 modelOptions 不应被序列化"
+        );
         assert!(out.get("requestOptionPresets").is_none());
         assert!(out.get("extraHeaders").is_none());
         assert!(out.get("baseUrlOptions").is_none());

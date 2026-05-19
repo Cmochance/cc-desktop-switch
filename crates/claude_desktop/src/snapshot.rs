@@ -133,11 +133,7 @@ pub fn snapshot_state(
     rotate_stale_active_snapshots(paths)?;
     std::fs::create_dir_all(&dir)?;
 
-    let plist_existed = paths
-        .plist
-        .as_ref()
-        .map(|p| p.exists())
-        .unwrap_or(false);
+    let plist_existed = paths.plist.as_ref().map(|p| p.exists()).unwrap_or(false);
     let config_json_existed = paths
         .config_json
         .as_ref()

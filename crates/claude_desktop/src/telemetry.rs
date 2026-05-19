@@ -154,10 +154,7 @@ impl LogBuffer {
         if fs::create_dir_all(&dir).is_err() {
             return;
         }
-        let path = dir.join(format!(
-            "{LOG_FILE_PREFIX}-{}.log",
-            now.format("%Y-%m-%d")
-        ));
+        let path = dir.join(format!("{LOG_FILE_PREFIX}-{}.log", now.format("%Y-%m-%d")));
         let _guard = self.file_lock.lock().unwrap();
         let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) else {
             return;
@@ -310,7 +307,10 @@ mod tests {
 
         assert!(buffer.get_all().is_empty());
         assert!(!log_path.exists());
-        assert!(codex_log.exists(), "Codex proxy-…log 不应被 Claude clear 误移动");
+        assert!(
+            codex_log.exists(),
+            "Codex proxy-…log 不应被 Claude clear 误移动"
+        );
 
         let backup_dir = dir.join("backup");
         let archived: Vec<PathBuf> = fs::read_dir(&backup_dir)

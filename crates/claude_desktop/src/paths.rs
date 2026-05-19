@@ -32,9 +32,8 @@ pub struct ClaudeDesktopPaths {
 
 impl ClaudeDesktopPaths {
     pub fn from_home_env() -> Result<Self, ClaudeDesktopError> {
-        let home = dirs::home_dir().ok_or_else(|| {
-            ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned())
-        })?;
+        let home = dirs::home_dir()
+            .ok_or_else(|| ClaudeDesktopError::SchemaCorrupt("无法解析 home 目录".to_owned()))?;
         Ok(Self::from_home_dir(home))
     }
 
@@ -82,11 +81,25 @@ mod tests {
         let td = TempDir::new().unwrap();
         let p = ClaudeDesktopPaths::from_home_dir(td.path());
         assert!(p.snapshots_dir.ends_with("claude-desktop-snapshots"));
-        assert!(p.active_snapshots_dir.ends_with("claude-desktop-snapshots/active"));
-        assert!(p.recovery_snapshots_dir.ends_with("claude-desktop-snapshots/recovery"));
+        assert!(p
+            .active_snapshots_dir
+            .ends_with("claude-desktop-snapshots/active"));
+        assert!(p
+            .recovery_snapshots_dir
+            .ends_with("claude-desktop-snapshots/recovery"));
         if cfg!(target_os = "macos") {
-            assert!(p.config_json.as_ref().unwrap().to_string_lossy().contains("Library/Application Support/Claude/"));
-            assert!(p.plist.as_ref().unwrap().to_string_lossy().contains("Library/Preferences/"));
+            assert!(p
+                .config_json
+                .as_ref()
+                .unwrap()
+                .to_string_lossy()
+                .contains("Library/Application Support/Claude/"));
+            assert!(p
+                .plist
+                .as_ref()
+                .unwrap()
+                .to_string_lossy()
+                .contains("Library/Preferences/"));
         }
     }
 }
